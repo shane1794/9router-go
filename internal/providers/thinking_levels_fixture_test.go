@@ -126,6 +126,16 @@ var pendingUpstreamDivergences = map[string]map[string][]string{
 	"sumopod": {
 		"gemini/gemini-3.8-flash": {"low", "medium", "high"},
 	},
+	// nous: the live endpoint (probed 2026-10-28) no longer publishes
+	// meituan/longcat-2.5-preview:free or stealth/missingno, so Go drops
+	// them from the catalog and the resolver returns no levels. The fixture
+	// was captured from upstream v0.5.109 which still lists them. Delete
+	// this entry when the fixture is re-captured from an upstream that
+	// dropped them too.
+	"nous": {
+		"meituan/longcat-2.5-preview:free": {},
+		"stealth/missingno":                {},
+	},
 }
 
 // divergentFromPending reports whether a mismatch is one of the documented
