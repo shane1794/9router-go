@@ -546,6 +546,17 @@ When tasked with syncing a feature, bugfix, or provider from upstream:
      `## [TAG] - <date>`, drops the emptied `[Unreleased]` section, and clears
      `.changes/`. Contributors do not run this per PR.
    - Format reference: [`.changes/README.md`](.changes/README.md).
+   - **Fork changes (`shane1794/9router-go`): ALSO append to `CHANGELOG.fork.md`.**
+     Every change that lands in this fork — port from upstream, fork-only fix,
+     local tweak — gets one entry under `## [Unreleased]` in
+     `CHANGELOG.fork.md`, newest first. Format mirrors `.changes/` fragments
+     (`###` heading + bullets: what, why, how verified). This file is the
+     fork's own history and never merges into upstream `CHANGELOG.md`; keep
+     both (`.changes/` fragment for upstream convention + `CHANGELOG.fork.md`
+     row for the fork log) so neither trail goes missing. `CHANGELOG.fork.md`
+     is append-only per change — never rewrite released rows, only add new
+     ones on top of `[Unreleased]`; the release process files them under a
+     version heading the same way `make changelog-merge` does for `CHANGELOG.md`.
 
 7. **Branch & PR Targeting (`main` ONLY — MANDATORY)**:
    - **Every pull request in this repository targets `main`.** Never open a PR
