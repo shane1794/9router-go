@@ -15,7 +15,7 @@ import (
 // any other way is left to the caller, because a 5xx or a transport error is
 // no evidence the credential is gone.
 func (h *ChatHandler) parkRejectedOAuthAccount(connectionID string, refreshErr error) bool {
-	if connectionID == "" || h.Repo == nil || !providers.IsRefreshUnauthorized(refreshErr) {
+	if connectionID == "" || h.Repo == nil || !providers.IsRefreshGrantDead(refreshErr) {
 		return false
 	}
 	until, failures, err := h.Repo.RecordConnectionOAuthFailure(connectionID, http.StatusUnauthorized, refreshErr.Error())

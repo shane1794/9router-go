@@ -22,6 +22,7 @@ const oauthLockTestProvider = "oauth-lock-test"
 
 type oauthRefresherStub struct {
 	status int // 0 = succeed
+	body   string
 	calls  atomic.Int32
 }
 
@@ -31,7 +32,11 @@ func (s *oauthRefresherStub) refresher() oauth.Refresher {
 		if s.status == 0 {
 			return &oauth.TokenResult{AccessToken: "fresh-token", RefreshToken: "fresh-refresh", ExpiresIn: 3600}, nil
 		}
-		return nil, &providers.OAuthRefreshError{Status: s.status, Body: "invalid_grant"}
+		body := s.body
+		if body == "" {
+			body = "invalid_grant"
+		}
+		return nil, &providers.OAuthRefreshError{Status: s.status, Body: body}
 	}
 }
 
@@ -112,11 +117,13 @@ func TestRejectedOAuthRefreshParksAccount(t *testing.T) {
 	tests := []struct {
 		name       string
 		status     int
+		body       string
 		wantParked bool
 	}{
-		{"revoked grant is parked", http.StatusUnauthorized, true},
-		{"invalid request is not parked", http.StatusBadRequest, false},
-		{"token endpoint down is not parked", http.StatusInternalServerError, false},
+		{"revoked grant is parked", http.StatusUnauthorized, "unauthorized", true},
+		{"spent token is parked", http.StatusBadRequest, `{"error":"invalid_grant"}`, true},
+		{"bad request without dead grant is not parked", http.StatusBadRequest, `{"error":"slow_down"}`, false},
+		{"token endpoint down is not parked", http.StatusInternalServerError, "boom", false},
 	}
 
 	for _, entry := range entryPoints {
@@ -125,7 +132,7 @@ func TestRejectedOAuthRefreshParksAccount(t *testing.T) {
 				database, cleanup := setupChatTestDB(t)
 				defer cleanup()
 				dropSeededConn(t, database)
-				installRefresher(t, &oauthRefresherStub{status: tt.status})
+				installRefresher(t, &oauthRefresherStub{status: tt.status, body: tt.body})
 				insertOAuthConn(t, database, "conn-broken", 1, expiredOAuthData(t))
 
 				handler := NewChatHandler(db.NewRepo(database))

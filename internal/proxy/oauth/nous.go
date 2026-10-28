@@ -17,6 +17,13 @@ func init() {
 	Register("nous", refreshNous)
 }
 
+// Package-level vars so tests can point the refresher at a fixture server;
+// the consts in providers stay the production default.
+var (
+	nousTokenURL    = providers.NousTokenURL
+	nousAgentKeyURL = providers.NousAgentKeyURL
+)
+
 func refreshNous(ctx context.Context, p *Params) (*TokenResult, error) {
 	if p.RefreshToken == "" {
 		return nil, fmt.Errorf("missing refresh token")
@@ -33,7 +40,7 @@ func refreshNous(ctx context.Context, p *Params) (*TokenResult, error) {
 		"client_id":     {"hermes-cli"},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, providers.NousTokenURL, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, nousTokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +56,10 @@ func refreshNous(ctx context.Context, p *Params) (*TokenResult, error) {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("nous token refresh returned %d: %s", resp.StatusCode, string(body))
+		// Typed error so IsRefreshGrantDead recognises a rejected grant
+		// (400 invalid_grant = rotated/replayed single-use token) and parks
+		// the account instead of replaying the dead token on every tick.
+		return nil, fmt.Errorf("nous: %w", &providers.OAuthRefreshError{Status: resp.StatusCode, Body: truncateBody(body)})
 	}
 
 	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -95,7 +105,7 @@ func refreshNous(ctx context.Context, p *Params) (*TokenResult, error) {
 
 func mintNousAgentKey(ctx context.Context, client *http.Client, accessToken string) string {
 	payload, _ := json.Marshal(map[string]any{"min_ttl_seconds": 7200})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, providers.NousAgentKeyURL, bytes.NewReader(payload))
+ req, err := http.NewRequestWithContext(ctx, http.MethodPost, nousAgentKeyURL, bytes.NewReader(payload))
 	if err != nil {
 		return ""
 	}
