@@ -458,7 +458,7 @@ func TestForwardRequest_NousWireFormat(t *testing.T) {
 		nousCfg := &providers.ProviderConfig{
 			BaseURL: "https://inference-api.nousresearch.com/v1/chat/completions",
 		}
-		body := []byte(`{"model":"stepfun/step-5-preview:free","messages":[{"role":"user","content":"hi"}]}`)
+		body := []byte(`{"model":"stepfun/step-3.7-flash:free","messages":[{"role":"user","content":"hi"}]}`)
 		rec := httptest.NewRecorder()
 		if err := h.forwardRequest(context.Background(), rec, nousCfg, "test-key", body, false, false, nil, client, "nous"); err != nil {
 			t.Fatalf("forwardRequest: %v", err)
@@ -488,7 +488,7 @@ func TestForwardRequest_NousWireFormat(t *testing.T) {
 		httpCfg := &providers.ProviderConfig{
 			BaseURL: "http://inference-api.nousresearch.com/v1",
 		}
-		body := []byte(`{"model":"stepfun/step-5-preview:free","messages":[{"role":"user","content":"hi"}]}`)
+		body := []byte(`{"model":"stepfun/step-3.7-flash:free","messages":[{"role":"user","content":"hi"}]}`)
 		rec := httptest.NewRecorder()
 		if err := h.forwardRequest(context.Background(), rec, httpCfg, "test-key", body, false, false, nil, client, "nous"); err != nil {
 			t.Fatalf("forwardRequest: %v", err)
@@ -517,7 +517,7 @@ func TestForwardRequest_NousWireFormat(t *testing.T) {
 		evilCfg := &providers.ProviderConfig{
 			BaseURL: "https://inference-api.nousresearch.com.evil.test/v1",
 		}
-		body := []byte(`{"model":"stepfun/step-5-preview:free","messages":[{"role":"user","content":"hi"}]}`)
+		body := []byte(`{"model":"stepfun/step-3.7-flash:free","messages":[{"role":"user","content":"hi"}]}`)
 		rec := httptest.NewRecorder()
 		if err := h.forwardRequest(context.Background(), rec, evilCfg, "test-key", body, false, false, nil, client, "nous"); err != nil {
 			t.Fatalf("forwardRequest: %v", err)

@@ -85,13 +85,12 @@ func TestNousCapabilities(t *testing.T) {
 		vision, video bool
 	}{
 		"meituan/longcat-2.0:free":         {1048756, 262144, false, false},
-		"meituan/longcat-2.5-preview:free": {1048576, 131072, true, false},
-		"stepfun/step-5-preview:free":      {1000000, 64000, true, true},
 		"upstage/solar-mini4:free":         {524288, 131072, false, false},
 		"stepfun/step-3.7-flash:free":      {262144, 256000, true, true},
 		"poolside/laguna-s-2.1:free":       {262144, 131072, false, false},
 		"poolside/laguna-xs-2.1:free":      {262144, 32768, false, false},
-		"stealth/missingno":                {262144, 131072, false, false},
+		"reflection/beam-1.0-501b-a23b:free": {262144, 131072, false, false},
+		"ornith/ornith-1.5-122b:free":        {262144, 262144, true, false},
 	}
 
 	// A model added to the registry without a row here would pass no assertion
@@ -134,7 +133,7 @@ func TestNousCapabilities(t *testing.T) {
 
 func TestNousAttribution(t *testing.T) {
 	t.Run("default attribution tags added", func(t *testing.T) {
-		body := []byte(`{"model":"stepfun/step-5-preview:free","messages":[{"role":"user","content":"hi"}]}`)
+		body := []byte(`{"model":"stepfun/step-3.7-flash:free","messages":[{"role":"user","content":"hi"}]}`)
 		out := ApplyNousAttribution(body)
 
 		var req map[string]any
@@ -163,7 +162,7 @@ func TestNousAttribution(t *testing.T) {
 	})
 
 	t.Run("preserves caller product tag and removes empty tags", func(t *testing.T) {
-		body := []byte(`{"model":"stepfun/step-5-preview:free","messages":[{"role":"user","content":"hi"}],"tags":["product=my-app","user=","client= ","custom=value"]}`)
+		body := []byte(`{"model":"stepfun/step-3.7-flash:free","messages":[{"role":"user","content":"hi"}],"tags":["product=my-app","user=","client= ","custom=value"]}`)
 		out := ApplyNousAttribution(body)
 
 		var req map[string]any
@@ -207,9 +206,9 @@ func TestNousAttribution(t *testing.T) {
 
 	t.Run("preserves malformed caller tags for upstream validation", func(t *testing.T) {
 		for _, raw := range []string{
-			`{"model":"stepfun/step-5-preview:free","messages":[{"role":"user","content":"hi"}],"tags":"user=alice"}`,
-			`{"model":"stepfun/step-5-preview:free","messages":[{"role":"user","content":"hi"}],"tags":42}`,
-			`{"model":"stepfun/step-5-preview:free","messages":[{"role":"user","content":"hi"}],"tags":{"user":"alice"}}`,
+			`{"model":"stepfun/step-3.7-flash:free","messages":[{"role":"user","content":"hi"}],"tags":"user=alice"}`,
+			`{"model":"stepfun/step-3.7-flash:free","messages":[{"role":"user","content":"hi"}],"tags":42}`,
+			`{"model":"stepfun/step-3.7-flash:free","messages":[{"role":"user","content":"hi"}],"tags":{"user":"alice"}}`,
 		} {
 			out := ApplyNousAttribution([]byte(raw))
 			if string(out) != raw {
@@ -266,7 +265,7 @@ func TestApplyNousThinking(t *testing.T) {
 	})
 
 	t.Run("auto mode maps to medium effort", func(t *testing.T) {
-		body := []byte(`{"model":"stepfun/step-5-preview:free","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"auto"}`)
+		body := []byte(`{"model":"stepfun/step-3.7-flash:free","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"auto"}`)
 		out := ApplyNousThinking(body, "nous")
 
 		var req map[string]any

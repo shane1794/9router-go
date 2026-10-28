@@ -52,13 +52,12 @@ func TestGetPricingForModel_FreeNamespaceOrder(t *testing.T) {
 func TestNousFreePricing(t *testing.T) {
 	models := []string{
 		"meituan/longcat-2.0:free",
-		"meituan/longcat-2.5-preview:free",
-		"stepfun/step-5-preview:free",
 		"upstage/solar-mini4:free",
 		"stepfun/step-3.7-flash:free",
 		"poolside/laguna-s-2.1:free",
 		"poolside/laguna-xs-2.1:free",
-		"stealth/missingno",
+		"reflection/beam-1.0-501b-a23b:free",
+		"ornith/ornith-1.5-122b:free",
 	}
 	for _, m := range models {
 		t.Run(m, func(t *testing.T) {

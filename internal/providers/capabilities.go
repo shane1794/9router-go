@@ -648,15 +648,20 @@ func init() {
 		},
 	}
 
+	// Nous Research Portal free tier (probed live against
+	// https://inference-api.nousresearch.com/v1/models on 2026-10-28: the
+	// three ids below are gone from the live catalogue, replaced by
+	// reflection/beam-1.0-501b-a23b:free and ornith/ornith-1.5-122b:free.
+	// Modality, context and max-output values are taken verbatim from the
+	// live payload (architecture.input_modalities + top_provider).
 	providerCapabilities["nous"] = map[string]Capabilities{
-		"meituan/longcat-2.0:free":         {Tools: true, Reasoning: true, ThinkingFormat: "nous", ContextWindow: 1048756, MaxOutput: 262144},
-		"meituan/longcat-2.5-preview:free": {Tools: true, Vision: true, Reasoning: true, ThinkingFormat: "nous", ContextWindow: 1048576, MaxOutput: 131072},
-		"stepfun/step-5-preview:free":      {Tools: true, Vision: true, VideoInput: true, Reasoning: true, ThinkingFormat: "nous", ContextWindow: 1000000, MaxOutput: 64000},
-		"upstage/solar-mini4:free":         {Tools: true, Reasoning: true, ThinkingFormat: "nous", ContextWindow: 524288, MaxOutput: 131072},
-		"stepfun/step-3.7-flash:free":      {Tools: true, Vision: true, VideoInput: true, Reasoning: true, ThinkingFormat: "nous", ContextWindow: 262144, MaxOutput: 256000},
-		"poolside/laguna-s-2.1:free":       {Tools: true, Reasoning: true, ThinkingFormat: "nous", ContextWindow: 262144, MaxOutput: 131072},
-		"poolside/laguna-xs-2.1:free":      {Tools: true, Reasoning: true, ThinkingFormat: "nous", ContextWindow: 262144, MaxOutput: 32768},
-		"stealth/missingno":                {Tools: true, Reasoning: true, ThinkingFormat: "nous", ContextWindow: 262144, MaxOutput: 131072},
+		"meituan/longcat-2.0:free":            {Tools: true, Reasoning: true, ThinkingFormat: "nous", ContextWindow: 1048756, MaxOutput: 262144},
+		"upstage/solar-mini4:free":            {Tools: true, Reasoning: true, ThinkingFormat: "nous", ContextWindow: 524288, MaxOutput: 131072},
+		"stepfun/step-3.7-flash:free":         {Tools: true, Vision: true, VideoInput: true, Reasoning: true, ThinkingFormat: "nous", ContextWindow: 262144, MaxOutput: 256000},
+		"poolside/laguna-s-2.1:free":          {Tools: true, Reasoning: true, ThinkingFormat: "nous", ContextWindow: 262144, MaxOutput: 131072},
+		"poolside/laguna-xs-2.1:free":         {Tools: true, Reasoning: true, ThinkingFormat: "nous", ContextWindow: 262144, MaxOutput: 32768},
+		"reflection/beam-1.0-501b-a23b:free":  {Tools: true, Reasoning: true, ThinkingCanDisable: new(false), ThinkingFormat: "nous", ContextWindow: 262144, MaxOutput: 131072},
+		"ornith/ornith-1.5-122b:free":          {Tools: true, Vision: true, Reasoning: true, ThinkingFormat: "nous", ContextWindow: 262144, MaxOutput: 262144},
 	}
 
 	// `cx` is the alias codex publishes under, so it serves the same catalog
