@@ -56,8 +56,11 @@ func TestRTKCompressionMetricsCalculationAndLog(t *testing.T) {
 	}
 
 	logOutput := logBuf.String()
-	if !strings.Contains(logOutput, "[token_saver] RTK compressed tool output") {
-		t.Errorf("expected [token_saver] log in output, got: %s", logOutput)
+	if !strings.Contains(logOutput, "[RTK] saved ") {
+		t.Errorf("expected [RTK] JS-style log in output, got: %s", logOutput)
+	}
+	if !strings.Contains(logOutput, "via [") {
+		t.Errorf("expected technique list in log, got: %s", logOutput)
 	}
 	if !strings.Contains(logOutput, "orig_est=") {
 		t.Errorf("expected orig_est in log, got: %s", logOutput)
@@ -99,8 +102,8 @@ func TestUsageLogging_WithCompressionMetrics(t *testing.T) {
 	h.LogUsage(context.Background(), info, usage, 150, []byte(`{"messages":[{"role":"user","content":"test"}]}`), nil)
 
 	logOutput := logBuf.String()
-	if !strings.Contains(logOutput, "[usage] logged") {
-		t.Errorf("expected [usage] logged line, got: %s", logOutput)
+	if !strings.Contains(logOutput, "📊 DONE 150ms · IN 600 · OUT 50") {
+		t.Errorf("expected [usage] JS-style DONE line, got: %s", logOutput)
 	}
 	if !strings.Contains(logOutput, "compressed=1000->600 (40% saved)") {
 		t.Errorf("expected compressed=1000->600 (40%%%% saved) in log, got: %s", logOutput)
@@ -244,8 +247,8 @@ func TestTryForwardWithConnection_RTKEndToEnd(t *testing.T) {
 
 	// Verify terminal log has both RTK log and usage compressed log
 	logOutput := logBuf.String()
-	if !strings.Contains(logOutput, "[token_saver] RTK compressed tool output") {
-		t.Errorf("expected token_saver RTK compressed log line, got: %s", logOutput)
+	if !strings.Contains(logOutput, "[RTK] saved ") {
+		t.Errorf("expected token_saver [RTK] JS-style log line, got: %s", logOutput)
 	}
 	if !strings.Contains(logOutput, "compressed=") {
 		t.Errorf("expected usage log to contain compressed=, got: %s", logOutput)

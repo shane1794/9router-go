@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -216,6 +217,9 @@ func (l Level) String() string {
 }
 
 func init() {
+	// The text format carries its own [HH:MM:SS] stamp; the stdlib date/time
+	// prefix would duplicate it on every line.
+	log.SetFlags(0)
 	currentLevel = LevelInfo
 	if lvl := os.Getenv("LOG_LEVEL"); lvl != "" {
 		if l, ok := levelNames[strings.ToLower(lvl)]; ok {
@@ -359,6 +363,47 @@ func outputCtx(ctx context.Context, l Level, tag, msg string, kv ...any) {
 	output(l, tag, msg, kv...)
 }
 
+// Request tag emojis mirror the Next.js logger (src/sse/utils/logger.js
+// REQ_TAGS): one stable color per session so all lines of one CLI
+// conversation share a tag.
+var reqTagEmojis = []string{"🟢", "🔵", "🟣", "🟡", "🟠", "🔴", "⚪", "🟤"}
+
+// TagForSession maps a session seed to a stable emoji tag. Same seed always
+// maps to the same color; empty seed rotates.
+var reqTagCursor uint64
+
+func TagForSession(seed string) string {
+	if seed == "" {
+		n := atomic.AddUint64(&reqTagCursor, 1) - 1
+		return reqTagEmojis[n%uint64(len(reqTagEmojis))]
+	}
+	var h int32
+	for i := 0; i < len(seed); i++ {
+		h = (h*31 + int32(seed[i]))
+	}
+	if h < 0 {
+		h = -h
+	}
+	return reqTagEmojis[int(h)%len(reqTagEmojis)]
+}
+
+// symbolForTag picks the leading symbol for a JS-style line from the tag.
+func symbolForTag(tag string) string {
+	switch tag {
+	case "request":
+		return "📥"
+	case "usage":
+		return "📊"
+	case "token_saver":
+		return "[RTK]"
+	case "fallback":
+		return "🔄"
+	case "guard":
+		return "🛡"
+	}
+	return ""
+}
+
 func output(l Level, tag, msg string, kv ...any) {
 	levelMu.RLock()
 	jsonMode := isJSONFormat
@@ -392,6 +437,18 @@ func output(l Level, tag, msg string, kv ...any) {
 	prefix := levelPrefix[l]
 	var b strings.Builder
 	b.Grow(len(prefix) + len(tag) + len(msg) + 80)
+	// JS-style line: [HH:MM:SS] TAG symbol message kv... — mirrors the
+	// Next.js logger (src/sse/utils/logger.js line()). The request tag
+	// emoji is carried in the msg by the chat handler (reqTag prefix);
+	// other tags get their symbol here.
+	ts := time.Now().Format("15:04:05")
+	b.WriteString("[")
+	b.WriteString(ts)
+	b.WriteString("] ")
+	if sym := symbolForTag(tag); sym != "" && !strings.HasPrefix(msg, sym) && !strings.HasPrefix(msg, "▶") && !strings.HasPrefix(msg, "✗") && !strings.HasPrefix(msg, "📊") && !strings.HasPrefix(msg, "[RTK]") {
+		b.WriteString(sym)
+		b.WriteString(" ")
+	}
 	if colorEnabled {
 		b.WriteString(levelColor[l])
 	}

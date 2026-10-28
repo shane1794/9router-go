@@ -483,6 +483,37 @@ type forwardRequestParams struct {
 	Endpoint          string
 }
 
+// JS-style request-line helpers (open-sse/handlers/chatCore.js request
+// line): the client model as called, STREAM/JSON, and a short account name.
+// Detailed counts (MSG/TOOL/FMT/THINK) need the translated body, which does
+// not exist yet at this point — they are appended by the dispatch site.
+func displayRequestedModel(requested, provider, model string) string {
+	if requested != "" {
+		return requested
+	}
+	return provider + "/" + model
+}
+
+func streamOrJSON(isStream bool) string {
+	if isStream {
+		return "STREAM"
+	}
+	return "JSON"
+}
+
+func shortConnName(name, connectionID string) string {
+	if name != "" {
+		return name
+	}
+	if len(connectionID) >= 8 {
+		return connectionID[:8]
+	}
+	if connectionID != "" {
+		return connectionID
+	}
+	return "-"
+}
+
 func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	ctx, w := f.Ctx, f.W
 	provider, model := f.Provider, f.Model
@@ -539,6 +570,16 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 			return &upstreamError{StatusCode: http.StatusUnauthorized, Body: []byte(`{"error":{"message":"no API key found","type":"auth_error","code":401}}`)}
 		}
 	}
+
+	// JS-style request line (open-sse/handlers/chatCore.js): one correlated
+	// summary before dispatch — client model → provider/model, formats,
+	// stream mode, message/tool counts, account. The emoji tag is stable
+	// per connection so all lines of one CLI session share a color.
+	reqTag := log.TagForSession(f.ConnectionID)
+	log.Info("chat", fmt.Sprintf("%s ▶ POST %s → %s/%s · %s · %s",
+		reqTag, displayRequestedModel(f.RequestedModel, provider, model), provider, model,
+		streamOrJSON(isStream), shortConnName(f.ConnName, f.ConnectionID)),
+		"provider", provider, "model", model, "acc", shortConnName(f.ConnName, f.ConnectionID))
 
 	if connectionID != "" {
 		rekey, _, err := h.refreshOAuthTokenIfExpired(connectionID, apiKey)
@@ -1255,7 +1296,7 @@ func (h *ChatHandler) applyTokenSavers(ctx context.Context, body []byte, claudeN
 	var origTokens, savedTokens, savedPct int
 	if h.TokenSaver.RTKEnabled() {
 		rtkCfg := h.TokenSaver.RTKConfig()
-		if next, did := tokensaver.CompressMessagesWithConfig(out, rtkCfg); did {
+		if next, savedBytes, techs := tokensaver.CompressMessagesDetailed(out, rtkCfg); len(techs) > 0 {
 			origTokens = len(out) / 4
 			compressedTokens := len(next) / 4
 			savedTokens = origTokens - compressedTokens
@@ -1263,8 +1304,16 @@ func (h *ChatHandler) applyTokenSavers(ctx context.Context, body []byte, claudeN
 			if origTokens > 0 {
 				savedPct = (savedTokens * 100) / origTokens
 			}
+			// JS-style: [RTK] saved 11560B / 75936B (15.2%) via [git-log,shell-ls] hits=2
+			// (open-sse/rtk/index.js formatRtkLog). kv pairs stay for parsers.
+			origBytes := len(out)
+			pct := 0.0
+			if origBytes > 0 {
+				pct = float64(savedBytes) / float64(origBytes) * 100.0
+			}
 			log.Info(
-				"token_saver", "RTK compressed tool output",
+				"token_saver", fmt.Sprintf("[RTK] saved %dB / %dB (%.1f%%) via [%s] hits=%d",
+					savedBytes, origBytes, pct, strings.Join(techs, ","), len(techs)),
 				"orig_est", origTokens,
 				"compressed_est", compressedTokens,
 				"saved_est", savedTokens,

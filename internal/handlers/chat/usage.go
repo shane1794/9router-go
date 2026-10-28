@@ -257,6 +257,19 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 	})
 	metaJSON := fmt.Sprintf(`{"provider":"%s","model":"%s","connectionId":"%s"}`, info.Provider, info.Model, info.ConnectionID)
 
+	// JS-style done line (open-sse/handlers/chatCore/requestDetail.js
+	// formatDoneLine): DONE <lat>ms · [TTFT] · IN n (CACHE ↻r +c) · OUT n.
+	// The kv pairs stay behind it so existing parsers keep working.
+	inStr := fmt.Sprintf("IN %d", usage.PromptTokens)
+	if cachedTokens > 0 || cacheCreationTokens > 0 {
+		inStr += fmt.Sprintf(" (CACHE ↻%d +%d)", cachedTokens, cacheCreationTokens)
+	}
+	ttftStr := ""
+	if ttftMs > 0 {
+		ttftStr = fmt.Sprintf(" · TTFT %dms", ttftMs)
+	}
+	doneMsg := fmt.Sprintf("📊 DONE %dms%s · %s · OUT %d",
+		latencyMs, ttftStr, inStr, usage.CompletionTokens)
 	usageKVs := []any{
 		"provider", info.Provider, "model", info.Model,
 		"prompt", usage.PromptTokens, "completion", usage.CompletionTokens, "cached", cachedTokens,
@@ -265,7 +278,7 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 	if info.SavedTokens > 0 {
 		usageKVs = append(usageKVs, "compressed", fmt.Sprintf("%d->%d (%d%% saved)", info.OriginalInputTokens, info.OriginalInputTokens-info.SavedTokens, info.SavedPercent))
 	}
-	log.Info("usage", "logged", append(usageKVs, info.ConnIdentityKV()...)...)
+	log.Info("usage", doneMsg, append(usageKVs, info.ConnIdentityKV()...)...)
 
 	// Reconcile the limiter's TPM reservation against what the turn actually
 	// cost. Without this the bucket is charged an estimate forever: a key whose
