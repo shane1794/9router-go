@@ -5,6 +5,7 @@ import (
 	json "encoding/json/v2"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -228,7 +229,163 @@ func commandFromDecodedArgs(args map[string]any) string {
 // CompressMessages compresses tool_result content in LLM request bodies in-place.
 // Returns modified body and true if any compression was applied.
 func CompressMessages(body []byte) ([]byte, bool) {
-	return CompressMessagesWithConfig(body, DefaultRTKConfig())
+	out, _, _ := CompressMessagesDetailed(body, DefaultRTKConfig())
+	// Detailed returns the original body on no-op; compare to preserve the
+	// bool contract without re-running compression.
+	return out, string(out) != string(body)
+}
+
+// CompressMessagesDetailed is CompressMessagesWithConfig plus the JS-style
+// log data: total bytes before/after and the distinct technique names
+// (open-sse/rtk/index.js formatRtkLog). Existing callers keep the bool
+// contract; the chat request line uses this for the [RTK] summary.
+func CompressMessagesDetailed(body []byte, cfg RTKConfig) ([]byte, int, []string) {
+	var rawMap map[string]jsontext.Value
+	if err := json.Unmarshal(body, &rawMap); err != nil || rawMap == nil {
+		return body, 0, nil
+	}
+	key := "messages"
+	itemsBytes, ok := rawMap["messages"]
+	if !ok {
+		key = "input"
+		itemsBytes, ok = rawMap["input"]
+	}
+	if !ok || len(itemsBytes) == 0 {
+		return body, 0, nil
+	}
+	var items []map[string]any
+	if err := json.Unmarshal(itemsBytes, &items); err != nil || len(items) == 0 {
+		return body, 0, nil
+	}
+	origLen := len(itemsBytes)
+	techSet := map[string]bool{}
+	addTechs := func(text, command string) string {
+		res := CompressTextDetailedWithCommand(text, command, cfg)
+		for _, t := range res.TechniquesUsed {
+			if t != "" && t != "none" {
+				techSet[t] = true
+			}
+		}
+		return res.Text
+	}
+	toolMap, cmdMap := buildToolCallMap(items)
+	compressed := false
+	for _, msg := range items {
+		if msg["type"] == "function_call_output" {
+			name, _ := msg["name"].(string)
+			command := ""
+			if callID, ok := msg["call_id"].(string); ok {
+				if name == "" {
+					name = toolMap[callID]
+				}
+				command = cmdMap[callID]
+			}
+			if isErrorToolResult(msg) || isProtectedTool(name) {
+				continue
+			}
+			if output, ok := msg["output"].(string); ok && len(output) > MinCompressSize {
+				msg["output"] = addTechs(output, command)
+				compressed = true
+			} else if outputArr, ok := msg["output"].([]any); ok {
+				for _, part := range outputArr {
+					if partMap, ok := part.(map[string]any); ok {
+						if t, ok := partMap["type"].(string); ok && (t == "input_text" || t == "text") {
+							if text, ok := partMap["text"].(string); ok && len(text) > MinCompressSize {
+								partMap["text"] = addTechs(text, command)
+								compressed = true
+							}
+						}
+					}
+				}
+			}
+			continue
+		}
+		if msg["role"] == "tool" {
+			name, _ := msg["name"].(string)
+			command := ""
+			if callID, ok := msg["tool_call_id"].(string); ok {
+				if name == "" {
+					name = toolMap[callID]
+				}
+				command = cmdMap[callID]
+			}
+			if isErrorToolResult(msg) || isProtectedTool(name) {
+				continue
+			}
+			if content, ok := msg["content"].(string); ok && len(content) > MinCompressSize {
+				msg["content"] = addTechs(content, command)
+				compressed = true
+			} else if contentArr, ok := msg["content"].([]any); ok {
+				for _, part := range contentArr {
+					if partMap, ok := part.(map[string]any); ok {
+						if t, ok := partMap["type"].(string); ok && t == "text" {
+							if text, ok := partMap["text"].(string); ok && len(text) > MinCompressSize {
+								partMap["text"] = addTechs(text, command)
+								compressed = true
+							}
+						}
+					}
+				}
+			}
+			continue
+		}
+		contentArr, ok := msg["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, part := range contentArr {
+			block, ok := part.(map[string]any)
+			if !ok || block["type"] != "tool_result" {
+				continue
+			}
+			name, _ := block["name"].(string)
+			command := ""
+			if toolUseID, ok := block["tool_use_id"].(string); ok {
+				if name == "" {
+					name = toolMap[toolUseID]
+				}
+				command = cmdMap[toolUseID]
+			}
+			if isErrorToolResult(block) || isProtectedTool(name) {
+				continue
+			}
+			if text, ok := block["text"].(string); ok && len(text) > MinCompressSize {
+				block["text"] = addTechs(text, command)
+				compressed = true
+			}
+			if content, ok := block["content"].(string); ok && len(content) > MinCompressSize {
+				block["content"] = addTechs(content, command)
+				compressed = true
+			} else if innerArr, ok := block["content"].([]any); ok {
+				for _, innerPart := range innerArr {
+					if innerBlock, ok := innerPart.(map[string]any); ok && innerBlock["type"] == "text" {
+						if text, ok := innerBlock["text"].(string); ok && len(text) > MinCompressSize {
+							innerBlock["text"] = addTechs(text, command)
+							compressed = true
+						}
+					}
+				}
+			}
+		}
+	}
+	if !compressed {
+		return body, 0, nil
+	}
+	compressedBytes, err := json.Marshal(items)
+	if err != nil {
+		return body, 0, nil
+	}
+	rawMap[key] = jsontext.Value(compressedBytes)
+	out, err := json.Marshal(rawMap)
+	if err != nil {
+		return body, 0, nil
+	}
+	techs := make([]string, 0, len(techSet))
+	for t := range techSet {
+		techs = append(techs, t)
+	}
+	sort.Strings(techs)
+	return out, origLen - len(compressedBytes), techs
 }
 
 // CompressMessagesWithConfig compresses tool_result content in LLM request bodies in-place using RTKConfig.
