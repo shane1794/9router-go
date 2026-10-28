@@ -1,0 +1,2 @@
+### Fixes
+- **Nous refresh**: Park a 400 `invalid_grant` (`This refresh token was already rejected`) as a dead grant instead of retrying the spent single-use token on every request, background, and usage refresh. `refreshNous` now returns a typed error the grant-dead gate recognises, and the chat/background parkers use the shared gate (previously 401-only) so the account shows re-authorize instead of hammering the token endpoint. Verified with fixture tests proving the spent grant parks and transient 4xx/5xx stay retryable.
