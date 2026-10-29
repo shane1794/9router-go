@@ -80,7 +80,7 @@ describe('getProviderStats', () => {
 })
 
 describe('matchesFilter', () => {
-  test('all passes everything; connected and not_connected split on stats', () => {
+  test('all passes everything; connected/not_connected split on having any connection', () => {
     const live = getProviderStats([conn({ testStatus: 'active' })], 'antigravity')
     const empty = getProviderStats([], 'antigravity')
     expect(matchesFilter(live, 'all')).toBe(true)
@@ -91,7 +91,16 @@ describe('matchesFilter', () => {
     expect(matchesFilter(live, 'not_connected')).toBe(false)
   })
 
-  test('legacy error/disabled values degrade to all instead of hiding cards', () => {
+  test('errored or fully-disabled connections still count as connected', () => {
+    const errored = getProviderStats([conn({ testStatus: 'error', lastError: 'Invalid API key' })], 'antigravity')
+    const disabled = getProviderStats([conn({ isActive: 0, testStatus: 'active' })], 'antigravity')
+    for (const stats of [errored, disabled]) {
+      expect(matchesFilter(stats, 'connected')).toBe(true)
+      expect(matchesFilter(stats, 'not_connected')).toBe(false)
+    }
+  })
+
+  test('legacy error/disabled values map to connected', () => {
     const live = getProviderStats([conn({ testStatus: 'active' })], 'antigravity')
     expect(matchesFilter(live, 'error')).toBe(true)
     expect(matchesFilter(live, 'disabled')).toBe(true)

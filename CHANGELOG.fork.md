@@ -11,9 +11,11 @@ merges into upstream `CHANGELOG.md`.
 - Upstream shipped a 5-option status filter (`all`, `connected`, `error`,
   `disabled`, `not_connected`) in the providers overview. Fork simplifies to
   the 3 requested modes: all providers, only providers with connections, only
-  providers without connections. Legacy `error`/`disabled` values degrade to
-  `all` so no card silently disappears. Covered by new `matchesFilter` tests
-  in `types.test.ts` (`bun test` 11 pass). Fragment:
+  providers without connections. "Connected" means holding any connection
+  (oauth or api key) regardless of state: errored or disabled rows still count
+  as having a connection, and legacy `error`/`disabled` values map to
+  `connected` for the same reason. Covered by `matchesFilter` tests in
+  `types.test.ts` (`bun test` 12 pass). Fragment:
   `.changes/790-provider-filter-three-modes.md`.
   Files: `web/src/components/connections/ProvidersOverviewGrid.svelte`,
   `web/src/components/connections/types.ts`,

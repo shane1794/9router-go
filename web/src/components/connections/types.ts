@@ -155,10 +155,13 @@ export function providerAuthTypes(
 
 export function matchesFilter(stats: ProviderStats, statusFilter: string, noAuth?: boolean): boolean {
   // Fork simplification: three modes only — all, connected, not connected.
-  // Legacy 'error'/'disabled' values from older UI states degrade to 'all'
-  // instead of silently matching nothing.
-  if (statusFilter === 'all' || statusFilter === 'error' || statusFilter === 'disabled') return true
-  if (statusFilter === 'connected') return stats.connected > 0 || (!!noAuth && stats.total === 0)
+  // "Connected" means the provider holds any connection (oauth or api key),
+  // whatever its state: errored or disabled rows still count as having a
+  // connection. Legacy 'error'/'disabled' values from older UI states map to
+  // 'connected' for the same reason.
+  if (statusFilter === 'all') return true
+  if (statusFilter === 'connected' || statusFilter === 'error' || statusFilter === 'disabled')
+    return stats.total > 0 || (!!noAuth && stats.total === 0)
   if (statusFilter === 'not_connected') return stats.total === 0 && !noAuth
   return true
 }
