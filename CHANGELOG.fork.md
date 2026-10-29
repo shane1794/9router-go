@@ -7,6 +7,11 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Upstream sync: luqman-v1/9router-go to 1.9.15-exp.15 (PR #1, merge 5e5e9b69)
+- Merged 25 upstream commits since merge-base `acddcdd` via PR #1, mergeable_state clean, 0 git conflicts, 175 files changed. Trial merge locally covered the first 23 (to 1.9.15-exp.15); GitHub added 2 more before merge (#794 stream usage, #796 batched key-list usage read). Fork-local files (provider filter, connected filter, nous invalid_grant fix, CHANGELOG.fork.md) untouched by the merge.
+- Verified before merge: `go build ./...` pass, web build pass, `bun test` 666 pass in UTC (1 timezone-only failure in WIB), svelte-check 77 errors, same as baseline, 0 unresolved identifiers. Go test note: 2 packages failed only on live-network tests in this sandbox (DeepSeek/ElevenLabs TLS via egress proxy, example.com SSRF check), not on merged code.
+- Fragment files upstream are carried as-is; note `.changes/790` now has 3 fragments (fork provider-filter, upstream token-normalizer, upstream qoder-pool) with different filenames, no git conflict.
+
 ### Provider filter: three modes only (`all` / `connected` / `not_connected`)
 - Upstream shipped a 5-option status filter (`all`, `connected`, `error`,
   `disabled`, `not_connected`) in the providers overview. Fork simplifies to
