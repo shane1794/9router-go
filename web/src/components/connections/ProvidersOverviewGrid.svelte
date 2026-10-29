@@ -24,7 +24,7 @@
   }: Props = $props()
 
   let searchQuery = $state('')
-  let statusFilter = $state<'all' | 'connected' | 'error' | 'disabled' | 'not_connected'>('all')
+  let statusFilter = $state<'all' | 'connected' | 'not_connected'>('all')
   let showAllApikey = $state(false)
 
   const APIKEY_INITIAL_VISIBLE = 20
@@ -86,8 +86,6 @@
     >
       <option value="all">All</option>
       <option value="connected">Connected</option>
-      <option value="error">Error</option>
-      <option value="disabled">Disabled</option>
       <option value="not_connected">Not Connected</option>
     </select>
   </div>

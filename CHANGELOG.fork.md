@@ -7,6 +7,18 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Provider filter: three modes only (`all` / `connected` / `not_connected`)
+- Upstream shipped a 5-option status filter (`all`, `connected`, `error`,
+  `disabled`, `not_connected`) in the providers overview. Fork simplifies to
+  the 3 requested modes: all providers, only providers with connections, only
+  providers without connections. Legacy `error`/`disabled` values degrade to
+  `all` so no card silently disappears. Covered by new `matchesFilter` tests
+  in `types.test.ts` (`bun test` 11 pass). Fragment:
+  `.changes/790-provider-filter-three-modes.md`.
+  Files: `web/src/components/connections/ProvidersOverviewGrid.svelte`,
+  `web/src/components/connections/types.ts`,
+  `web/src/components/connections/types.test.ts`.
+
 ### Fork rule: every fork change logged here
 - `AGENTS.md` step 6 now requires every fork change to also append an entry
   here under `[Unreleased]`. `CHANGELOG.fork.md` is append-only per change;

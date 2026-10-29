@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { getIconPath, getProviderStats, providerAuthTypes } from './types'
+import { getIconPath, getProviderStats, matchesFilter, providerAuthTypes } from './types'
 import type { ProviderConnection } from '../../api/client'
 
 function conn(overrides: Partial<ProviderConnection> = {}): ProviderConnection {
@@ -76,6 +76,25 @@ describe('getProviderStats', () => {
     expect(stats.allDisabled).toBe(true)
     expect(stats.connected).toBe(0)
     expect(stats.errorCount).toBe(0)
+  })
+})
+
+describe('matchesFilter', () => {
+  test('all passes everything; connected and not_connected split on stats', () => {
+    const live = getProviderStats([conn({ testStatus: 'active' })], 'antigravity')
+    const empty = getProviderStats([], 'antigravity')
+    expect(matchesFilter(live, 'all')).toBe(true)
+    expect(matchesFilter(empty, 'all')).toBe(true)
+    expect(matchesFilter(live, 'connected')).toBe(true)
+    expect(matchesFilter(empty, 'connected')).toBe(false)
+    expect(matchesFilter(empty, 'not_connected')).toBe(true)
+    expect(matchesFilter(live, 'not_connected')).toBe(false)
+  })
+
+  test('legacy error/disabled values degrade to all instead of hiding cards', () => {
+    const live = getProviderStats([conn({ testStatus: 'active' })], 'antigravity')
+    expect(matchesFilter(live, 'error')).toBe(true)
+    expect(matchesFilter(live, 'disabled')).toBe(true)
   })
 })
 
