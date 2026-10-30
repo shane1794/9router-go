@@ -26,14 +26,23 @@ func TestCodebuddyConversationHeaders_FamilyPresent(t *testing.T) {
 	if h["X-Conversation-Message-ID"] != h["X-Request-ID"] {
 		t.Errorf("X-Conversation-Message-ID (%s) must match X-Request-ID (%s)", h["X-Conversation-Message-ID"], h["X-Request-ID"])
 	}
+	if h["X-Conversation-Request-ID"] != h["X-Request-ID"] {
+		t.Errorf("X-Conversation-Request-ID (%s) must match X-Request-ID (%s)", h["X-Conversation-Request-ID"], h["X-Request-ID"])
+	}
+	if h["X-Conversation-ID"] == h["X-Conversation-Message-ID"] {
+		t.Error("X-Conversation-ID must differ from X-Conversation-Message-ID (upstream 3fd925a)")
+	}
 }
 
-func TestCodebuddyConversationHeaders_StableAcrossRetries(t *testing.T) {
+// Upstream decolua/9router@3fd925a supersedes the old stable-per-session
+// derivation (#581): every call issues fresh ids, and the session id no
+// longer pins the conversation id.
+func TestCodebuddyConversationHeaders_FreshPerRequest(t *testing.T) {
 	req := &Request{Body: []byte(`{"messages":[{"role":"user","content":"same opening"}]}`)}
 	a := codebuddyConversationHeaders(req, req.Body)
 	b := codebuddyConversationHeaders(req, req.Body)
-	if a["X-Conversation-ID"] != b["X-Conversation-ID"] {
-		t.Errorf("conversation id not stable: %s != %s", a["X-Conversation-ID"], b["X-Conversation-ID"])
+	if a["X-Conversation-ID"] == b["X-Conversation-ID"] {
+		t.Error("conversation id must be fresh per request")
 	}
 	if a["X-Conversation-Request-ID"] == b["X-Conversation-Request-ID"] {
 		t.Error("request id must be fresh per request")
@@ -43,15 +52,11 @@ func TestCodebuddyConversationHeaders_StableAcrossRetries(t *testing.T) {
 	}
 }
 
-func TestCodebuddyConversationHeaders_SessionIDPrecedence(t *testing.T) {
+func TestCodebuddyConversationHeaders_SessionIDDoesNotPinConversationID(t *testing.T) {
 	a := codebuddyConversationHeaders(&Request{SessionID: "sess-123"}, []byte(`{"messages":[]}`))
-	b := codebuddyConversationHeaders(&Request{SessionID: "sess-456"}, []byte(`{"messages":[]}`))
 	c := codebuddyConversationHeaders(&Request{SessionID: "sess-123"}, []byte(`{"messages":[]}`))
-	if a["X-Conversation-ID"] != c["X-Conversation-ID"] {
-		t.Error("same session id must map to same conversation id")
-	}
-	if a["X-Conversation-ID"] == b["X-Conversation-ID"] {
-		t.Error("different session ids must map to different conversation ids")
+	if a["X-Conversation-ID"] == c["X-Conversation-ID"] {
+		t.Error("same session id must not map to the same conversation id under the upstream fresh-per-request contract")
 	}
 }
 
@@ -72,17 +77,6 @@ func TestCodebuddyConversationHeaders_RandomFallback(t *testing.T) {
 	}
 	if a["X-Conversation-ID"] == b["X-Conversation-ID"] {
 		t.Error("with nothing to derive from, ids must be random")
-	}
-}
-
-func TestFirstUserText_StringAndBlocks(t *testing.T) {
-	s := firstUserText([]byte(`{"messages":[{"role":"assistant","content":"skip"},{"role":"user","content":"plain"}]}`))
-	if s != "plain" {
-		t.Errorf("string content: got %q", s)
-	}
-	b := firstUserText([]byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"blk"}]}]}`))
-	if b != "blk" {
-		t.Errorf("blocks content: got %q", b)
 	}
 }
 

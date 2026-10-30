@@ -2,7 +2,6 @@ package executor
 
 import (
 	"bytes"
-	"crypto/sha1"
 	json "encoding/json/v2"
 	"errors"
 	"fmt"
@@ -278,23 +277,17 @@ func transformCodebuddyBody(body []byte) ([]byte, error) {
 
 func codebuddyHeaders(req *Request, cfg *providers.ProviderConfig, body []byte) map[string]string {
 	reqID := strings.ReplaceAll(uuid.NewString(), "-", "")
-	convReqID := strings.ReplaceAll(uuid.NewString(), "-", "")
 
-	sessionKey := req.SessionID
-	if sessionKey == "" && req.ConnData != nil {
-		if m, ok := req.ConnData["sessionId"].(string); ok {
-			sessionKey = m
-		}
-	}
-	if sessionKey == "" {
-		sessionKey = firstUserText(body)
-	}
-	var convID string
-	if sessionKey != "" {
-		convID = stableConversationUUID("codebuddy:" + sessionKey)
-	} else {
-		convID = uuid.NewString()
-	}
+	// Upstream decolua/9router@3fd925a: the official plugin sends fresh
+	// request/conversation ids per request, and X-Conversation-Request-ID
+	// reuses the request id. The previous Go derivation pinned
+	// X-Conversation-ID to the session (stableConversationUUID) and minted
+	// an independent X-Conversation-Request-ID; both diverged from the
+	// plugin contract the channel check verifies, so both are now fresh
+	// per call, matching the upstream test (fresh ids per request,
+	// X-Request-ID == X-Conversation-Request-ID,
+	// X-Conversation-ID != X-Conversation-Message-ID).
+	convID := uuid.NewString()
 
 	domain := "www.codebuddy.ai"
 	if req.ConnData != nil {
@@ -328,7 +321,7 @@ func codebuddyHeaders(req *Request, cfg *providers.ProviderConfig, body []byte) 
 		"X-Stainless-Retry-Count":     "0",
 		"X-Request-ID":                reqID,
 		"X-Conversation-ID":           convID,
-		"X-Conversation-Request-ID":   convReqID,
+		"X-Conversation-Request-ID":   reqID,
 		"X-Conversation-Message-ID":   reqID,
 		"X-Agent-Intent":              "craft",
 		"X-Agent-Purpose":             "conversation",
@@ -337,58 +330,6 @@ func codebuddyHeaders(req *Request, cfg *providers.ProviderConfig, body []byte) 
 
 func codebuddyConversationHeaders(req *Request, body []byte) map[string]string {
 	return codebuddyHeaders(req, nil, body)
-}
-
-// stableConversationUUID derives an RFC-4122-v5-shaped UUID from key via
-// SHA-1, matching the JS executor's derivation so the same session key maps
-// to the same conversation id across implementations.
-func stableConversationUUID(key string) string {
-	sum := sha1.Sum([]byte(key))
-	var b [16]byte
-	copy(b[:], sum[:16])
-	b[6] = (b[6] & 0x0f) | 0x50 // version 5
-	b[8] = (b[8] & 0x3f) | 0x80 // RFC 4122 variant
-	u, err := uuid.FromBytes(b[:])
-	if err != nil {
-		return uuid.NewString()
-	}
-	return u.String()
-}
-
-// firstUserText extracts the opening user message text from an OpenAI-shaped
-// body (string or typed blocks) to use as a conversation-key fallback.
-func firstUserText(body []byte) string {
-	var reqMap map[string]any
-	if err := json.Unmarshal(body, &reqMap); err != nil {
-		return ""
-	}
-	msgs, _ := reqMap["messages"].([]any)
-	for _, raw := range msgs {
-		m, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		role, _ := m["role"].(string)
-		if role != "user" {
-			continue
-		}
-		switch content := m["content"].(type) {
-		case string:
-			return content
-		case []any:
-			var sb strings.Builder
-			for _, blk := range content {
-				if bm, ok := blk.(map[string]any); ok {
-					if t, ok := bm["text"].(string); ok {
-						sb.WriteString(t)
-					}
-				}
-			}
-			return sb.String()
-		}
-		return ""
-	}
-	return ""
 }
 
 // sseToOpenAIJSON re-aggregates OpenAI chat-completions SSE chunks into a

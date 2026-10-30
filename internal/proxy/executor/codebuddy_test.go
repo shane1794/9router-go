@@ -460,8 +460,8 @@ func TestForwardCodebuddyCN_WireHeadersAndBody(t *testing.T) {
 	if capturedReq.Header.Get("X-Conversation-Message-ID") != reqID {
 		t.Errorf("X-Conversation-Message-ID must match X-Request-ID")
 	}
-	if len(capturedReq.Header.Get("X-Conversation-Request-ID")) != 32 {
-		t.Errorf("X-Conversation-Request-ID = %q, want 32 hex chars", capturedReq.Header.Get("X-Conversation-Request-ID"))
+	if capturedReq.Header.Get("X-Conversation-Request-ID") != reqID {
+		t.Errorf("X-Conversation-Request-ID (%s) must match X-Request-ID (%s)", capturedReq.Header.Get("X-Conversation-Request-ID"), reqID)
 	}
 	if capturedReq.Header.Get("X-Conversation-ID") == "" {
 		t.Error("X-Conversation-ID must be set")
