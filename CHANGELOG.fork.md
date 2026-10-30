@@ -7,6 +7,10 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Upstream sync: luqman-v1/9router-go to 1.9.15-exp.16 (PR #2, merge 3a5d7e52)
+- Merged 11 upstream commits since merge-base `b7816cf6` via PR #2, mergeable_state clean, 0 git conflicts, 70 files changed (7849 insertions, 215 deletions). Upstream head `38e29580` (#807 combo-to-combo fallback, #812 Cloudflare Tunnel, #802 opencode alias fix, bump to exp.16, #798 wire-contract table, #797 anthropic-compatible Claude wire, #795 client context limits, #774 combo no-same-connection resend, #782 live-catalog negative cache, #755 opencode probe test message, #793 route response headers). Fork-local files untouched (provider filter, connected filter, nous fix, codebuddy header fix, CHANGELOG.fork.md).
+- Verified before merge: `go build ./...` pass, web build pass, providers tests pass. Executor, tunnel and chat packages each showed only sandbox live-network failures (Qoder/DeepSeek TLS via egress proxy, .invalid DNS sinkhole), verified identical on pure upstream main `38e29580`. No provider connections checked.
+
 ### CodeBuddy: plugin request/conversation id headers (upstream decolua/9router@3fd925a)
 - Chat requests to `codebuddy-cn` and `codebuddy-intl` now send fresh ids per request with `X-Conversation-Request-ID` and `X-Conversation-Message-ID` both equal to `X-Request-ID`, and a fresh `X-Conversation-ID` per request. Previously Go minted an independent conversation-request id and pinned the conversation id to the session (#581), diverging from the plugin contract the upstream channel check verifies (400 / 11128 "request illegal" without the plugin ids). `stableConversationUUID` and `firstUserText` removed as dead code. Backoff/combo half of the upstream commit was already ported (#5024) and is unchanged. Verified: codebuddy executor tests, provider classify tests, `go build ./...`, `go vet` pass; no provider connections checked. Fragment: `.changes/797-codebuddy-plugin-headers.md`.
 - Files: `internal/proxy/executor/codebuddy.go`, `codebuddy_conversation_headers_test.go`, `codebuddy_test.go`.
