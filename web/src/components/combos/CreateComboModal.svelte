@@ -11,7 +11,8 @@
   } from 'lucide-svelte'
   import type { Combo, ComboRulesPreview, SmartRule } from '../../api/client'
   import { api } from '../../api/client'
-  import { getModelCaps } from '../../lib/models'
+  import { getCatalogContextLength, getModelCaps } from '../../lib/models'
+  import { formatContextWindow } from '../../lib/formatContextWindow'
   import Button from '../../lib/ui/Button.svelte'
   import Input from '../../lib/ui/Input.svelte'
   import Modal from '../../lib/ui/Modal.svelte'
@@ -687,6 +688,7 @@
         <div class="flex flex-col gap-1 max-h-[55vh] overflow-y-auto sm:max-h-[350px]">
           {#each models as model, idx}
             {@const caps = getModelCaps(model)}
+            {@const ctxLen = getCatalogContextLength(model)}
             <div
               class="group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 transition-colors {draggedIdx === idx ? 'opacity-40 bg-brand-500/10' : dragOverIdx === idx ? 'border-2 border-brand-500 bg-brand-500/5' : 'bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04]'}"
               draggable="true"
@@ -732,6 +734,14 @@
                       </span>
                     {/if}
                     <span>{model}</span>
+                    {#if ctxLen && ctxLen > 0}
+                      <span
+                        class="text-[9px] opacity-60 font-sans font-normal"
+                        title={`${Number(ctxLen).toLocaleString()} tokens`}
+                      >
+                        {formatContextWindow(ctxLen)}
+                      </span>
+                    {/if}
                     {#if res?.ok}
                       <span class="text-[10px] opacity-75 font-sans font-normal">{res.latencyMs}ms</span>
                     {/if}

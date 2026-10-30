@@ -239,6 +239,7 @@
                   isAdded={addedModelValues.includes(model.value)}
                   vision={model.caps.vision}
                   reasoning={model.caps.reasoning}
+                  contextLength={model.contextLength}
                   deprecated={model.deprecated}
                   onToggle={handleToggle}
                 />

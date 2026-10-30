@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS, PROVIDER_MODELS } from './models'
+import { getCatalogContextLength, getModelsByProviderId, PROVIDER_ID_TO_ALIAS, PROVIDER_MODELS } from './models'
 import { PROVIDER_CATALOG } from './providers'
 
 // PROVIDER_MODELS is keyed by provider id, while PROVIDER_ID_TO_ALIAS holds the
@@ -123,3 +123,19 @@ describe('keyless live catalogs', () => {
   })
 })
 
+describe('getCatalogContextLength', () => {
+  it('returns the catalog window for a known provider/model value', () => {
+    expect(getCatalogContextLength('kr/gpt-5.6-sol')).toBe(272000)
+  })
+
+  it('keeps a slash inside the model id intact', () => {
+    // kilo-auto/free is namespaced inside the kgw catalog; the lookup must
+    // split on the first slash only, or it finds no such model.
+    expect(getCatalogContextLength('kgw/kilo-auto/free')).toBe(256000)
+  })
+
+  it('returns undefined instead of guessing for unknown values', () => {
+    expect(getCatalogContextLength('no-such-model')).toBeUndefined()
+    expect(getCatalogContextLength('ag/no-such-model')).toBeUndefined()
+  })
+})

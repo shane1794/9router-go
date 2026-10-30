@@ -7,6 +7,32 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Model context tags: show each model's max context where it is picked (port from serenhope/9router v0.5.117-Custom)
+
+- Ported "Every model shows its real window" from serenhope/9router
+  (v0.5.117-Custom, `ModelSelectModal.js` ContextTag +
+  `src/shared/utils/contextWindow.js`): a model now carries its context
+  window next to its name (1.0M, 256k, 200, full token count in the tooltip),
+  so a 1M model is never picked as if it were a small one. Literal git
+  cherry-pick was impossible: serenhope is Next.js/JS, this fork is Go+Svelte,
+  so the tag was rewritten in Svelte against data this fork already serves.
+- Shown in three places: model picker chips, combo member rows in the combo
+  editor, and the Available Models grid on each provider page (caps endpoint
+  wins there, static catalog is the fallback). No backend change; a model
+  with no known window shows no tag, never a guess.
+- Coverage note: only ~77 static catalog entries carry a `contextLength`,
+  so picker/combo tags appear only where the catalog knows the window; the
+  provider grid covers more via the caps endpoint (synced catalogs, custom
+  models). Custom/alias models in the picker show no tag yet.
+- Verified: web unit tests 658 pass, 0 fail; `bun run build` pass;
+  svelte-check 77 errors, same as baseline, none in the changed lines.
+  No provider connections checked. Fragment: `.changes/813-model-context-tags.md`
+  (813 is fork-assigned, not an upstream PR number).
+- Files: `web/src/lib/formatContextWindow.ts` (+ test),
+  `web/src/lib/models.ts` (+ test), `web/src/components/combos/pickerData.ts`,
+  `ModelPill.svelte`, `ModelPickerModal.svelte`, `CreateComboModal.svelte`,
+  `web/src/components/connections/types.ts`, `ProviderDetailView.svelte`.
+
 ### Upstream sync: luqman-v1/9router-go to 1.9.15-exp.16 (PR #2, merge 3a5d7e52)
 - Merged 11 upstream commits since merge-base `b7816cf6` via PR #2, mergeable_state clean, 0 git conflicts, 70 files changed (7849 insertions, 215 deletions). Upstream head `38e29580` (#807 combo-to-combo fallback, #812 Cloudflare Tunnel, #802 opencode alias fix, bump to exp.16, #798 wire-contract table, #797 anthropic-compatible Claude wire, #795 client context limits, #774 combo no-same-connection resend, #782 live-catalog negative cache, #755 opencode probe test message, #793 route response headers). Fork-local files untouched (provider filter, connected filter, nous fix, codebuddy header fix, CHANGELOG.fork.md).
 - Verified before merge: `go build ./...` pass, web build pass, providers tests pass. Executor, tunnel and chat packages each showed only sandbox live-network failures (Qoder/DeepSeek TLS via egress proxy, .invalid DNS sinkhole), verified identical on pure upstream main `38e29580`. No provider connections checked.

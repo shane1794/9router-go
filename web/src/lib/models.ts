@@ -7315,6 +7315,21 @@ export function getModelsByProviderId(providerId: string): ProviderModel[] {
   return PROVIDER_MODELS[providerId] || PROVIDER_MODELS[alias] || [];
 }
 
+/**
+ * Static catalog window for a "provider/model" value, when the catalog
+ * knows it. The provider segment is the display prefix (e.g. `ag`, `kr`),
+ * and the model id may itself contain a slash, so only the first slash
+ * splits the two. Unknown models return undefined, never a guess.
+ */
+export function getCatalogContextLength(modelValue: string): number | undefined {
+  const slash = (modelValue || "").indexOf("/");
+  if (slash < 0) return undefined;
+  const provider = modelValue.slice(0, slash);
+  const modelId = modelValue.slice(slash + 1);
+  if (!provider || !modelId) return undefined;
+  return getModelsByProviderId(provider).find((m) => m.id === modelId)?.contextLength;
+}
+
 export function getModelKind(m: unknown, fallback = "llm"): string {
   if (m && typeof m === "object") {
     const obj = m as { kind?: unknown; type?: unknown };

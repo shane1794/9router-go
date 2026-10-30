@@ -25,6 +25,9 @@ export interface PickerModel {
   name: string
   value: string
   caps: { vision: boolean; audioInput: boolean; reasoning: boolean }
+  /** Static catalog window, when the catalog knows it; absent for custom
+   *  and alias models, whose window only the caps endpoint knows. */
+  contextLength?: number
   /** True when the gateway confirmed this model is gone upstream. */
   deprecated?: boolean
 }
@@ -126,6 +129,7 @@ export function resolveModelPickerGroups(
         name: m.name || m.id,
         value: `${alias}/${m.id}`,
         caps: getModelCaps(m.id, m),
+        contextLength: m.contextLength,
         deprecated: isDeprecated(m.id),
       })
     }

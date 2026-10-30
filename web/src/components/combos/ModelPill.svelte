@@ -1,10 +1,13 @@
 <script lang="ts">
   import { Brain, Check, Eye } from 'lucide-svelte'
+  import { formatContextWindow } from '../../lib/formatContextWindow'
 
   interface Props {
     label: string
     value: string
     isAdded: boolean
+    /** Catalog window; omitted when unknown, and then no tag renders. */
+    contextLength?: number
     /** Flattened out of the model's caps so the props compare by value: an
      *  object prop is a fresh identity on every picker rebuild and reads as a
      *  change to all ~1000 pills at once. */
@@ -19,7 +22,7 @@
     deprecated?: boolean
   }
 
-  let { label, value, isAdded, vision = false, reasoning = false, onToggle, deprecated = false }: Props = $props()
+  let { label, value, isAdded, vision = false, reasoning = false, contextLength, onToggle, deprecated = false }: Props = $props()
 
   function handleClick() {
     onToggle(value)
@@ -40,6 +43,14 @@
     <Check class="w-3 h-3 shrink-0" />
   {/if}
   <span class="truncate">{label}</span>
+  {#if contextLength && contextLength > 0}
+    <span
+      class="text-[9px] opacity-60 font-normal shrink-0"
+      title={`${Number(contextLength).toLocaleString()} tokens`}
+    >
+      {formatContextWindow(contextLength)}
+    </span>
+  {/if}
   {#if vision}
     <Eye class={isAdded ? 'w-3 h-3 text-white/90 shrink-0' : 'w-3 h-3 text-blue-500 shrink-0'} title="Vision — Supports image input" />
   {/if}

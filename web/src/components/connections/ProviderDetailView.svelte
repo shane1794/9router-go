@@ -28,6 +28,7 @@
     writeCallback,
   } from '../../lib/oauth-handoff'
   import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from '../../lib/models'
+  import { formatContextWindow } from '../../lib/formatContextWindow'
   import { copyToClipboard } from '../../lib/clipboard'
   import { parseModelIds } from '../../lib/bulk-models'
   import {
@@ -403,6 +404,17 @@
   // the catalog ships as a static bundle, but caps depend on the provider
   // registry, the capability tables and the synced models.dev catalog.
   let modelCaps = $state<Record<string, ModelCaps>>({})
+  // Window shown on each Available Models row: the caps endpoint wins
+  // (it knows custom models and synced catalogs), the static catalog is
+  // the fallback for a registry model the endpoint has not answered yet,
+  // and 0 means unknown, so no tag renders.
+  let modelContextWindow = $derived.by(() => {
+    const out: Record<string, number> = {}
+    for (const m of allAvailableModels) {
+      out[m.id] = modelCaps[m.id]?.contextWindow ?? m.contextLength ?? 0
+    }
+    return out
+  })
   // Union of the thinking levels this provider's models accept, with the
   // explicit "auto" reset first — upstream providerThinkingLevels
   // (dashboard/providers/[id]/page.js:186). null hides the picker entirely for a
@@ -4560,6 +4572,14 @@
                 <code class="max-w-[72vw] truncate rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted sm:max-w-[360px]">
                   {fullModelId}
                 </code>
+                {#if modelContextWindow[model.id] > 0}
+                  <span
+                    class="text-[9px] opacity-60 font-normal shrink-0"
+                    title={`${Number(modelContextWindow[model.id]).toLocaleString()} tokens`}
+                  >
+                    {formatContextWindow(modelContextWindow[model.id])}
+                  </span>
+                {/if}
                 {#if rowCaps?.free}
                   <span class="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                     FREE

@@ -35,6 +35,9 @@ export interface ModelItem {
   isCustom?: boolean
   caps: { vision: boolean; reasoning: boolean }
   kind?: string
+  /** Static catalog window for a registry model; custom models leave this
+   *  out and the provider page fills it from the caps endpoint instead. */
+  contextLength?: number
 }
 
 export interface CustomModelData {
@@ -243,7 +246,7 @@ export async function fetchSuggestedModels(fetcher: {
  * list in its own order and treats custom models as additions to it.
  */
 export function buildAvailableModels(
-  builtInModels: Array<{ id: string; name?: string; kind?: string; type?: string }>,
+  builtInModels: Array<{ id: string; name?: string; kind?: string; type?: string; contextLength?: number }>,
   providerCustomModels: CustomModelData[]
 ): ModelItem[] {
   const list: ModelItem[] = []
@@ -258,6 +261,7 @@ export function buildAvailableModels(
       isCustom: false,
       caps: getModelCaps(bm.id, bm),
       kind: getModelKind(bm),
+      contextLength: bm.contextLength,
     })
   }
   for (const cm of providerCustomModels) {
