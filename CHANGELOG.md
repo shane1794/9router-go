@@ -1,6 +1,6 @@
 # Changelog
 
-## [v1.9.15-exp.14] - 2026-10-28
+## [v1.9.15] - 2026-10-31
 
 ### feat(zed): serve Zed's hosted models through the OpenAI-compatible API
 
@@ -544,23 +544,1321 @@ JSON measurement. A `-payload` flag sends a caller-supplied body verbatim, and
 the mock answers in the shape the body asks for (tools, reasoning), so a
 workload can exercise a lane without a bespoke mock.
 
-### Changed — Request log lines match the Next.js gateway shape
+### fix(translator): repair truncated tool arguments to prevent json marshal failure
 
-- Request dispatch now emits one correlated line: `<tag> ▶ POST <client-model> → <provider>/<model> · STREAM|JSON · ACC:<conn>` with a stable per-connection emoji tag (`log.TagForSession`, same 8-color rotation as `open-sse` `tagForSession`).
-- RTK line now reads `[RTK] saved <n>B / <n>B (<pct>%) via [<techniques>] hits=<k>` (`open-sse/rtk/index.js formatRtkLog` shape) with the distinct `TechniquesUsed` from `CompressTextDetailedWithCommand`; token estimates stay behind as kv.
-- Usage line now reads `📊 DONE <lat>ms · [TTFT <n>ms ·] IN <n> [(CACHE ↻r +c)] · OUT <n>` (`requestDetail.js formatDoneLine` shape) with the full kv pairs preserved for parsers.
-- Text log lines carry `[HH:MM:SS]` and the stdlib date/time prefix is disabled so stamps do not duplicate. JSON log shape unchanged.
+When an upstream model hits `max_tokens` or the generation output limit while generating a tool call (such as a large `Bash` command with `finish_reason: length`):
+- The `function.arguments` JSON string cuts off mid-string or mid-object (e.g. `{"command": "cat << 'EOF'...` without closing quotes or braces).
+- `sanitizeToolArgs` failed to parse the truncated JSON and returned the raw unclosed string.
+- When marshaling the translated Claude message, `encoding/json/v2` validates `jsontext.Value` and fails with `cannot marshal from Go jsontext.Value: unexpected EOF within "/content/0/input/command"`, dropping the entire response with HTTP 502 Bad Gateway.
 
-### Fixed — Nous free catalog matches the live endpoint
+Fixes applied:
+- Add `RepairTruncatedJSON` to close unclosed strings, keys, arrays, and objects in truncated JSON payloads.
+- Use `SafeToolCallInput` to ensure `tool_use.input` is always a valid `jsontext.Value` before marshaling.
 
-- Drop `meituan/longcat-2.5-preview:free`, `stepfun/step-5-preview:free`, and `stealth/missingno`: gone from `GET /v1/models` (probed 2026-10-28), so offering them only produces upstream 404s.
-- Add `reflection/beam-1.0-501b-a23b:free` (reasoning mandatory, cannot disable) and `ornith/ornith-1.5-122b:free` (vision input, 262144 max output): both zero-priced with >= 200k context on the live catalogue.
-- Verified with `go build ./...` and `go test ./internal/providers/ ./internal/pricing/ ./internal/handlers/chat/`.
+### Fixed
+
+- **Thinking config preservation on tool-result turns** (upstream #5305):
+  - Treat `role: "tool"` (OpenAI) and `role: "function"` (Gemini) as user-equivalent turns so `NormalizeThinkingConfig` does not drop `thinking` on follow-up turns carrying tool execution results.
+  - Ensures reasoning models (Claude, DeepSeek, Kimi) continue thinking when synthesizing responses after tool calls.
+
+### Fixed
+- Command Code: send the official CLI 1.88.0 identity headers (`User-Agent: cli`, `x-command-code-version: 1.88.0`, `x-cli-environment: production`, `x-cli-surface: cli`, `x-taste-learning: false`) instead of the stale 0.25.7 set, and reuse the body `threadId` as `x-session-id` (upstream decolua/9router b1effa03 parity). Verified with `go test` on executor and chat handler packages.
+- Command Code: send `x-project-slug` (slugified gateway working dir, `9router-go` fallback when the dir slugifies empty — upstream rejects empty with 400) and derive `threadId` from the client session so one conversation keeps one id. Note: as with the official CLI, `x-project-slug`/`config.workingDir` disclose the gateway's working-directory path to Command Code upstream.
+- Command Code: retry 502/503/504 twice (1s/2s backoff, context-aware) when no byte was written yet (upstream 092c84ea parity).
+- Command Code: map AI SDK finish reasons to OpenAI values (`tool-calls`/`tool_use` → `tool_calls`, `content-filter` → `content_filter`, `error`/empty → `stop`); a raw `tool-calls` made OpenAI clients abort with "unexpected finish reason 'tool-calls'".
+- Command Code: forward real token usage — `totalUsage.inputTokens`/`outputTokens` (the old code read nonexistent `promptTokens`/`completionTokens`, so nothing was ever forwarded), `cachedInputTokens` and `reasoningTokens` as `prompt_tokens_details.cached_tokens` / `completion_tokens_details.reasoning_tokens`, with `finish-step` usage fallback and `total_tokens`; the gateway usage history now records the upstream counts instead of an `OutputLength/4` estimate.
+- Command Code: a mid-stream `{"type":"error"}` event no longer streams the error text as fake content with `finish_reason: "stop"`; it emits an in-band OpenAI error frame and ends the stream (upstream 092c84ea parity). Covered by an integration test proving usageHistory records the upstream token counts.
+
+### fix(codebuddy-cn): replicate official device identity and telemetry to prevent bans
+
+Port of upstream `decolua/9router` PR #3257 (`feat(codebuddy-cn): anti-ban device
+fingerprint + telemetry replication`), resolving issue #819.
+
+Tencent cross-references device fingerprints sent in `/v2/report` telemetry. A
+CodeBuddy CN key proxied through the gateway previously sent chat requests with
+zero telemetry and an outdated User-Agent (`2.108.1`), which Tencent's ban
+detector flagged as a silent/bot client and banned.
+
+Changes applied:
+- **Stable per-credential device identity** (`codebuddy_identity.go`): derives
+  deterministic `qimei36` (36 hex), `machineId` (UUID), `sessionId` (UUID),
+  `deviceId` (16 hex), `hostId` (32 hex), plus consistent VCS and hardware
+  profiles from the credential seed. Stable across process restarts, unique per
+  credential (no cross-contamination), and never leaks the raw secret.
+- **Fail-open anti-ban telemetry** (`codebuddy_telemetry.go`): replicates the
+  official CLI's lifecycle events (`ide_lifecycle`, `plugin_status`), pre-chat
+  events (`agent_task_created`, `chat_message_send`, `chat_request_send`),
+  post-chat events (`chat_message_response`, `agent_task_completed`), and
+  Galileo OpenTelemetry traces. All sends are fire-and-forget on detached
+  goroutines with a hard 5-second timeout — never delays, blocks, or alters the
+  outcome of a chat request.
+- **Header & registry refresh**:
+  - `codebuddy-cn` User-Agent bumped `2.108.1` → `2.133.1` (matching official CLI).
+  - Added `X-IDE-Version: 2.133.1` and `X-Domain: www.codebuddy.cn`.
+  - `codebuddy-intl` (WorkBuddy) identity stays untouched and passes through
+    with zero telemetry overhead.
+
+### fix(headroom): resolve binary symlink and fallback to importlib.metadata for extras detection
+
+When Headroom is installed via `uv tool` or `pipx`:
+- The CLI binary in `~/.local/bin/headroom` is a symlink pointing to an isolated virtual environment (`~/.local/share/uv/tools/headroom-ai/bin/headroom`), where the virtualenv's Python interpreter lives. Upstream did not resolve symlinks, causing `pythonCandidates` to miss the virtualenv Python and fallback to the system Python.
+- Modern `uv` virtual environments do not include `pip` by default (`No module named pip`), causing `python -m pip list` to fail and reporting extras (`[code]`, `[ml]`) as not installed.
+
+Fixes applied:
+- Resolve binary symlinks in `pythonCandidates` using `filepath.EvalSymlinks` to discover the virtualenv Python.
+- Check `import headroom` as an interpreter verification fallback in `FindPython310`.
+- Fallback to Python standard library `importlib.metadata` in `GetInstalledHeadroomExtras` when `pip` is not installed.
+
+### fix(keys): validate the API key name on create, and repair two Windows-only test failures
+
+Found while auditing the dashboard's Create API Key modal. Three changes, one
+PR because they came out of one investigation and each is small.
+
+**`POST /api/keys` now applies the same name rules as the edit dialog.**
+`HandleCreateApiKey` stored the submitted `name` verbatim. Two consequences,
+both reachable from the modal and from any scripted caller:
+
+- A whitespace-only name (`"   "`) was stored as-is, so the key list rendered a
+  row with a blank label. The modal blocks that case client-side, but the
+  contract did not, and a caller that skipped the check got the blank row.
+- A 250-character name was accepted. `maxAPIKeyNameLen` (200) existed and was
+  enforced on `PUT /api/keys/{id}` — the rename path — but never on create, so
+  the cap could be bypassed by naming a key too long rather than renaming one.
+  The name rides along on every `/api/keys` listing and is rendered in the
+  dashboard list, which is why the cap exists at all.
+
+The handler now trims the name and refuses one past the limit, with the same
+message the update path uses. Validation runs before the first write, so a
+refused create leaves no row behind. An omitted or empty name is still accepted:
+the name is operator-facing only and the row is identified by its secret.
+
+**Two unit tests failed only on Windows, in the test rather than the code.**
+
+`TestBrowserNamesCoverTheBrowsersTheFlowCanDrive` asserted the Linux executable
+spellings on every platform, skipping only `google-chrome` on Windows. Brave
+ships as `brave-browser` from the Linux package and as `brave.exe` from the
+Windows installer — which `exec.LookPath` finds as `brave` — and Edge is
+`microsoft-edge` on Linux against `msedge` on Windows. The expected names are
+now per-platform, so the assertion is about the lookup list rather than about
+which spelling the platform happens to use. The rewrite also drops a shadowed
+loop variable that compared a string against a slice.
+
+`TestCLIDetectors_ClaudeHas9Router` set only `HOME` before calling
+`claudeHas9Router`, which reads the home directory through `os.UserHomeDir()`.
+On Windows that resolves `USERPROFILE` first and falls back to `HOME`, so the
+temp directory the test wrote `settings.json` into was never read and the
+function looked at the real profile instead. Both affected subtests now set
+`USERPROFILE` as well, matching what the `unconfigured` subtest in the same
+table already did.
+
+**Verified:** `TestHandleCreateApiKeyNameIsTrimmedAndCapped` (table-driven: plain
+name, surrounding whitespace, whitespace-only, omitted, exactly at the limit,
+one past the limit — the last asserting both the 400 and that no row was
+written); `go test ./internal/handlers/dashboard/ ./internal/browserlogin/
+./internal/handlers/media/ ./internal/db/` green after a rebase onto
+`origin/main`; `go vet ./...` clean; and a smoke run against a live gateway on
+:20130 confirming 201 chars → 400, 200 chars → 200, `"  Trimmed Name  "` →
+`"Trimmed Name"`, `"   "` → empty.
+
+### fix(freebuff): send x-freebuff-sse-gzip-recovery header on chat completions
+
+Freebuff upstream (`codebuff.com`) now requires the `x-freebuff-sse-gzip-recovery: 1` header on chat completion requests. Without this header, upstream rejects calls with HTTP 410 `freebuff_update_required` ("This version of Freebuff is out of date. Update to the latest version to keep coding...").
+
+- Add `x-freebuff-sse-gzip-recovery: 1` to `doChat` headers in `ForwardFreebuff`.
+- Add test assertion in `TestForwardFreebuff_FullCycle`.
+
+### Effective connection status, orphan-model cleanup, and race-free OAuth refresh
+
+Four fixes ported from `arewedaks/9router-go`, each one closing a class of
+bug that a live deployment had already hit.
+
+**A toggle is not a connection.** The dashboard counted a connection as active
+whenever its `isActive` flag was 1, so a category read "33/33 active" while
+every account in it was out of credit. `providers.EffectiveStatus` now derives
+the verdict from the stored `testStatus`, any live `modelLock_*` cooldown, and
+the stored `lastError`, with the same vocabulary the request path uses
+(`active`, `unavailable`, `quota_exhausted`, `rate_limited`, `expired`,
+`disabled`). `IsEffectivelyActive` is what the "N of M active" counters and the
+`accountStatus=active` filter now consult. Two recovery paths are deliberately
+refused: a spent credit budget never heals on a timer (`balance=0` stays
+`quota_exhausted` long after its lock lapses), and a rejected credential never
+heals at all (`invalid api key` stays `unavailable`). A per-minute throttle
+still reads as `rate_limited` rather than a spent balance, because the advice
+differs — one waits, the other tops up.
+
+The request path gained the matching cooldown family: `QuotaExhaustedCooldownMs`
+(1 hour) and a `Quota` flag on `ErrorRule`, so "insufficient balance" no longer
+falls through to the 30-second transient default and re-dials a guaranteed-failed
+upstream every half minute.
+
+**Orphan custom models are no longer advertised.** A restored backup can carry
+`customModels` rows pointing at provider node ids that exist in neither
+`providerNodes` nor `providerConnections` — on the measured database, 1504 of
+2057 rows pointed at 19 dead ids. `/v1/models` published them under their raw
+generated key (`openai-compatible-chat-<uuid>/model`), which no client can
+route: a request for one fails with `no active connections for provider`.
+`ChatHandler.aliveAliases` now gates the loose-custom-model pass on a set built
+from `KnownProviders`, `ProviderAliasMap`, configured node ids and their
+prefixes, and every provider holding a connection. `/v1/models` dropped from
+2069 to 562 entries on the reference database with no working route lost —
+`gh`, `oc`, `cl` and `cbai` are aliases, not connections, and stay listed.
+
+`providers.OutputAlias` and `NormalizeModelAlias` encode the upstream precedence
+(prefix → static alias → raw id) so a compatible node's models export as
+`bri/…` rather than `<uuid>/…`, and `IsGeneratedNodeID` inspects the trailing
+UUID instead of splitting on the last dash (a uuid contains dashes, so the old
+split never matched).
+
+**OAuth refresh is serialised per connection.** Refresh tokens are single-use at
+most providers, so two concurrent refreshes of the same connection — a chat
+request and a "Test Connection" click landing in the same second — race on one
+token; the loser gets `refresh_token_reused` and a healthy account is bricked
+until re-login. The chat path had a per-connection `singleflight.Group` of its
+own and the dashboard probe had none, so the two could not see each other.
+
+`oauth.RunRefresh` is now the single entry point, with a generation counter that
+tells a queued caller whether the winner already completed the work. It gives
+each caller the fresh token on success, and on failure gives every caller the
+error while each keeps the credential it arrived with — a shared flight must
+never hand one caller's token to another. `WithRefreshLock` wraps a plain
+per-connection mutex for callers that must hold the lock across a multi-step
+sequence (the forced-refresh path). The dashboard probe's
+`refreshConnectionToken` takes the same lock, so a manual test can no longer race
+a live request.
+
+**Re-signing an already-connected account no longer duplicates it.** Every
+`save*Connection` handler inserted unconditionally, so re-running an OAuth flow
+produced a second row for one account. That is not cosmetic: account fallback
+walks connections in order and locks the failing one per model, so a duplicate
+makes the router "fall back" to the same account's quota and lock it twice — the
+production database carried exactly this for `codebuddy-intl`, two rows six days
+apart sharing one JWT `sub`.
+
+`IdentityOf` reads the identity from the credential, not the label, so a renamed
+account is still recognised: GitHub keys off the immutable numeric user id
+(falling back to login, then email), Antigravity off the Google account email,
+CodeBuddy off the JWT `sub` claim, and any other JWT-bearing provider off its
+`sub`. Providers without a stable identity (`kiro`, `cloudflare-ai`,
+`openai-compatible-*`) are deliberately not deduplicated — many connections there
+are legitimate.
+
+The default is to refuse with a `409` carrying a `duplicate` object (existing id,
+name, identity kind), so the UI can offer "update that account instead".
+`replace: true` refreshes the existing connection in place, keeping its id and
+priority and clearing its model locks — the old failure state described the old
+token, so keeping it would leave a healthy account cooling down.
+
+**Antigravity client profile.** `providers.AntigravityUserAgentFor` selects
+between the IDE identity (`antigravity/<version>`) and the standalone CLI
+identity (`antigravity/cli/<version> (aidev_client; …)`). The profile is
+instance-wide rather than per-connection, so accounts cannot drift onto
+different fingerprints. `NormalizeAntigravityClientProfile` still reads the
+legacy `harness`/`sdk` spellings so previously stored connections keep working.
+
+Verified: `go build ./...` clean; `go test ./internal/providers/
+./internal/proxy/oauth/ ./internal/handlers/dashboard/ ./internal/handlers/chat/`
+all pass. New tests pin the status vocabulary (15 cases), the helper pattern
+tables, the `RunRefresh` collapse/keep-own-token contract under concurrency, the
+duplicate identity extraction per provider, and the Antigravity profile
+normalisation.
+
+### feat(dashboard): group both tunnels' behaviour under one Global tab
+
+- Tunnel Settings gains a **Global** tab holding what the two expose paths share:
+  Cloudflare behaviour, Tailscale behaviour, dashboard access, and a new
+  visibility switch. Each tunnel's own tab keeps only what is specific to it, so
+  the same question is no longer asked twice with the same answer.
+- **Allow dashboard access via tunnel** moves off the endpoint card into that tab.
+  It governed whichever tunnel was running, so a card owned by one row was the
+  wrong place to ask it.
+- **Hide unused tunnel rows** is new: while neither tunnel is running, the Tunnel
+  and Tailscale rows disappear and return the moment one is enabled. It tidies
+  the card without removing the controls. A row counts as in use while it is
+  *running*, not merely switched on in settings — a Cloudflare tunnel that is
+  enabled but has no connector is not serving anything.
+- The three endpoint rows now render through one `endpointBox` snippet with one
+  overflow menu each. Local was the odd one out: a bare copy button, and the only
+  row whose URL could not be masked at all. Its menu carries Show/Hide URL, Copy
+  URL, and Settings — which opens the Global tab, since Local is the row an
+  operator always sees and the Global tab is where the shared settings live.
+- Clicking the backdrop closes the modal, and Escape closes whichever overlay is
+  open. The backdrop handler compares the event target against itself, so a click
+  that starts inside the panel does not close the modal on its way out.
+
+**Verified.** `bun run ratchet:svelte` reports 0 unresolved identifiers and 76
+errors against a baseline of 77 — one fewer than before, and no new ones.
+`bun run build` and `go build ./cmd/9router-go/` pass. Measured in a browser: the
+three tabs each render only their own content, the Local menu toggles the mask
+round-trip, and Settings from Local lands on Global while Settings from Tunnel
+still lands on Cloudflare.
+
+### fix(oauth): handle device flow slow_down backoff and debounce polling
+
+When authenticating providers via OAuth Device Flow (such as GitHub Copilot or Grok CLI):
+- Polling previously dispatched immediately at T=0 right after initiating `deviceStart`, violating RFC 8628's minimum interval requirement and triggering upstream `slow_down` rate limits.
+- Backend `githubPoll` and `grokcliPoll` ignored upstream `interval` adjustments in `slow_down` responses, discarding the requested cooldown window and keeping clients on default polling intervals, leading to compounding rate-limit penalties.
+- Rapid button clicks on `Check now` or concurrent interval ticks fired overlapping polls without an in-flight guard.
+- Modal displayed "Step 2: Paste callback URL here" for device flows despite device flows requiring no callback URL.
+
+Fixes applied:
+- Frontend omits immediate zero-millisecond poll in `openDeviceOAuth` and adds an in-flight guard (`isPollingDevice`) on polling and the `Check now` button.
+- Backend extracts `interval` from upstream `slow_down` error responses in `githubPoll` and `grokcliPoll`, returning `{"status":"pending","interval":<n>}`.
+- Frontend dynamically updates polling timer to respect upstream `slow_down` interval backoff.
+- Modal hides manual callback URL input for device-code flows when a device user code is present.
+
+### feat(tunnel): implement Cloudflare Tunnel, and expose repair-origin
+
+- `HandleTunnelEnable` answered `400 "Cloudflare Tunnel service is not yet
+  supported in 9router-go"`, so the dashboard offered a Start Tunnel button that
+  could only ever fail. This ports the tunnel package and the handlers that
+  drive it.
+- `internal/tunnel` gains cloudflared process management (quick, named and
+  auto-provisioned modes), the Cloudflare API client for named tunnels, the state
+  file, the PID probe, the health check, and the watchdog that rebuilds a dropped
+  tunnel.
+- `HandleTunnelEnable` now takes the form payload — mode, shortId, customDomain,
+  token, cfApiToken, workerUrl — and starts the connector.
+  `HandleTunnelStatus` reports the live process state rather than trusting the
+  stored URL: a settings flag with no connector is a dead tunnel, and the
+  dashboard must say so.
+- `POST /api/tunnel/repair-origin` rewrites the ingress rule to point at this
+  gateway's own origin. Separate from enable, because an operator who moved the
+  gateway to a new port needs the rule fixed without tearing the tunnel down.
+- `Menu` gains an `iconOnly` prop: the endpoint rows put the overflow menu beside
+  a copy button, and a trigger that differs from it reads as a different kind of
+  control.
+
+**Verified.** `go build ./...` and `go test ./internal/tunnel/
+./internal/handlers/dashboard/` pass. `TestHandleTunnelEndpoints` previously
+asserted that a settings flag plus a stored URL meant *running* — that held only
+against the stub, which never started anything. The assertion now checks
+`settingsEnabled` for the flag and requires `enabled`/`running` to be false with
+no process.
+
+Three unrelated failures exist on the base commit as well and are untouched here:
+`browserlogin` browser names, `clientconfig` large-file timing budget, and
+`handlers` SPA routes against an unstubbed `web/dist`.
+
+### feat(dashboard): sidebar visibility fix, Advanced Features section, global search, pins, icon rail and counts
+
+Four changes to the sidebar and its Settings panel, on one foundation
+(`web/src/lib/nav.ts`) and mostly in one file (`Sidebar.svelte`).
+
+**The Sidebar card's visibility switches answer again.** PR #601 rewrote the
+row's `<Toggle>` to `disabled={true}`, so every switch rendered greyed out and
+swallowed the click — the preset dropdown still worked, which is what made the
+panel look healthy. The same PR dropped a `</div>` in the Display card, leaving
+the "Advanced settings" row as the parent of the provider-toggle row, the
+animation dropdown and the Currency block.
+
+- The switch is disabled only for the entry the panel lives behind
+  (`ALWAYS_VISIBLE_NAV_IDS`), which the server drops from the hide list on
+  write as well, so hiding Settings is unreachable from either side.
+- The change rides `markLayoutEdit`, like the preset, the arrows and a drop
+  already do: without it a flipped switch raised no save reminder, and the
+  edit was lost on the next navigation.
+- The Display card's rows are siblings again.
+
+**An `Advanced Features` section, above System.** It holds Security, Plans and
+Persona — the entries an operator configures once and rarely revisits — so
+System is left with the surfaces that run the gateway rather than govern it.
+Media Providers became a real accordion rather than one hardcoded boolean:
+`openAccordions` is a set of ids, so a second accordion in `nav.ts` needs no new
+state variable, and the open state survives a reload through `localStorage`. The
+header's active state is derived from its children instead of a `media-` prefix,
+so it stays correct for any accordion. `aria-expanded` rides the button, which
+the old markup lacked.
+
+**Global search (`Ctrl+K` / `Cmd+K`).** One index over every model, provider,
+page and settings section — 1,656 rows, built once and cached. The query is
+*staged* in the input and only run when the operator presses Enter or the Search
+button: a keystroke-driven filter over that many rows re-renders the list
+between two keypresses, which reads as lag on the 1 vCPU box this gateway
+serves. Editing the query retires the results on screen, so a stale list never
+reads as a search that ran on its own. Pages and settings outrank models,
+because an operator typing a tab name wants the tab, not the 400 models whose id
+happens to contain the same letters. A nav row can be pinned from its result.
+
+**Pinned entries (default on).** A Pinned section above the groups, holding up
+to eight. On by default because the section is empty until something is pinned,
+so an untouched install gains nothing and loses nothing. The list is a
+per-operator `localStorage` preference rather than a server setting: an operator
+who pins Usage on their laptop has not asked for it on the box in the rack. A
+pin naming an entry a later build removes is dropped rather than rendered as a
+dead row.
+
+**Collapse to icons (default off).** The sidebar shrinks to a 56px icon rail,
+every label replaced by its icon with a tooltip. Off by default because it hides
+every label at once, which is a layout to opt into rather than one to discover.
+The links stay in the DOM — only their labels go.
+
+**Sidebar counts.** A badge only appears when the number is actionable:
+Providers reads `3 / 12 active` rather than a bare total, a failing connection
+earns the warning colour, and Combos and API keys show a plain count while the
+list is short enough to read. Proxy Pools shows nothing because its list is
+fetched inside its own view, and inventing a number for it would be worse than
+an absent one.
+
+**Labelled groups fold.** `Advanced Features` and `System` are now buttons, so
+an operator on a short screen can press the sections they are not using. Groups
+start open — the stored set holds the *collapsed* ids — and the group holding
+the active tab stays open whatever was stored, because folding it would hide the
+page the operator is looking at.
+
+The two layout preferences live in a new `lib/sidebarPrefs.svelte.ts` rather
+than in `displayPrefs.ts`, because the Settings switch and the sidebar are
+siblings in the same tab: a `storage` event never fires for that write, and
+polling `localStorage` to work around it is the kind of thing that quietly
+becomes permanent. Pin rules are pure in `lib/navFavorites.ts` and reactive in
+`lib/navFavorites.svelte.ts`, following the `usagePanelPlan.ts` /
+`usagePanel.svelte.ts` split this repo already uses.
+
+Verified in a real browser against a real gateway: the switch hides the entry,
+Save publishes it, the sidebar drops the row, the switch brings it back, and the
+Settings row stays disabled; the section renders with Security; the accordion
+folds and unfolds with its children and survives a reload; typing produces no
+results and Enter does; a model query ranks models first and a page query ranks
+the page first; a result navigates and closes; a pin survives a reload and an
+unpin removes it; the rail shrinks 288px → 56px with every link intact and
+restores; groups start expanded, fold on click, survive a reload, and reopen on
+navigation; a badge appears with the right sentence once an API key exists.
+`bun test src/` 672 pass (24 new), the two e2e suites 12/12, svelte-check
+baseline 77 → 76.
+
+### fix(dashboard): keep the API key mask the same length as the secret
+
+- The mask collapsed everything between the first six and last four characters
+  into a fixed run of bullets, so a 35-character key rendered as 11 characters.
+  That told the reader two things it had no business knowing: that the secret was
+  longer than ten characters, and roughly how much longer. A mask whose length
+  tracks the thing it hides is not a mask — it is a length oracle.
+- All four masks now preserve the exact length: `maskClientKey` (the value the
+  API sends as `keyDisplay`), `keikey.Mask` (stored on rotate), `maskSecret`
+  in the dashboard's key table, and `maskConnectionSecret` on the connection
+  form. A revealed key and its mask occupy the same width, so pressing reveal
+  no longer reflows the row or moves the buttons beside the value.
+- `keikey.Mask` cut its plaintext by byte, not by rune — the same defect
+  `maskClientKey` was fixed for in #362. A key ending in a multi-byte rune
+  produced a mask holding invalid UTF-8, which `encoding/json/v2` rejects
+  mid-encode: the 200 header is already on the wire, so the client receives a
+  half-written body. It now shares `handlerutil.RunePrefix`/`RuneSuffix` with
+  the other three.
+- Short values still collapse to a fixed sentinel: there is nothing to show and
+  nothing to measure. `keikey.Mask`'s `"***"` is kept for the same reason
+  upstream keeps it, so existing no-key usage rows stay in one bucket instead of
+  splitting.
+
+**Verified.** `go build ./internal/...` and `go test ./internal/keikey/
+./internal/handlers/dashboard/` pass. `TestMask` gained a rune-count assertion
+and was mutation-checked: restoring the ellipsis form fails it. A multi-byte
+case joins the table, because the rune-count assertion alone passes vacuously
+on ASCII input — the byte-slicing bug only shows on a key ending in a
+multi-byte rune.
+
+### Added
+
+- **Combo-to-Combo fallback chain & nested combo expansion** (implements upstream issue decolua/9router#5307):
+  - Support `fallbackCombos` in `ComboStrategy` to chain secondary combos in order when all members of a primary combo fail or time out on retryable errors.
+  - Recursively expand nested combo members up to depth 5 with cycle detection.
+  - Ensure multi-hop fallback chains (`A -> [B, C]`) continue to subsequent fallback combos when an intermediate fallback combo fails retryably without writing premature terminal errors.
+  - Accurately report winning combo in `x-9router-combo` response headers.
+  - Short-circuit on non-retryable 4xx client errors.
+
+### fix(analytics): resolve custom provider node names on usage topology and breakdown table
+
+Custom OpenAI-compatible provider nodes with mixed-case custom suffixes
+(e.g. `openai-compatible-chat-Wildy`) displayed as raw synthetic ids truncated to
+`openai-compat...` on the Usage Overview topology map and in the "Usage by Provider"
+breakdown table instead of rendering their configured display name (`wildy.ai.id`).
+
+The root cause was case-folding during provider deduplication and lookup:
+- `AnalyticsView.svelte` lowercased the provider id (`targetId = cat?.id || canonical`),
+  which caused the exact-case lookup in `nodeNameById` (keyed by the database's
+  case-sensitive node id) to miss and fall back to the raw lowercased id.
+- `usedInPeriod` evaluated `stats.byProvider` with only lowercased keys, causing
+  traffic under mixed-case provider ids to evaluate as 0 and dropping active connections
+  from the topology map.
+- `UsageBreakdownTable.svelte` invoked `providerDisplayName(key)` without passing the
+  `providerNodes` list, causing all custom node rows in the provider breakdown view to
+  render raw synthetic ids.
+
+Fixed by:
+- Preserving the original provider id casing in `AnalyticsView.svelte` for custom nodes
+  while maintaining case-insensitive deduplication for catalog providers.
+- Checking both raw and canonical keys in `usedInPeriod` against `stats.byProvider`.
+- Indexing `nodeNameById` by both exact and lowercased keys, with case-insensitive fallback.
+- Updating `providerDisplayName` in `types.ts` to match node ids and catalog entries
+  case-insensitively.
+- Passing `providerNodes` from `AnalyticsView.svelte` into `UsageBreakdownTable.svelte`
+  so custom compatible node labels resolve cleanly.
+- Adding regression tests in `types.test.ts` for mixed-case custom node ids.
+
+### fix(executor): CommandCode non-stream requests now fold SSE to JSON
+
+`ForwardCommandcode` previously ignored `req.IsStream` and always returned
+SSE (`Content-Type: text/event-stream`). A non-stream client — including
+the dashboard's **Test** button — received SSE whose JSON parser found no
+`choices` array, and the probe reported:
+
+    Provider returned no completion choices for this model
+
+CommandCode's `/alpha/generate` always returns NDJSON regardless of the
+client's `stream` field (the build hardcodes `params.stream = true` to match
+upstream's `transformRequest` that sets `body.stream = true`). Upstream's
+non-stream downstream handler folds the forced SSE back into one
+`chat.completion` JSON using `wrapNdjsonAsOpenAISse`. Kiro already has the
+same pattern (`handleKiroNonStream`).
+
+`handleCommandcodeNonStream` now mirrors it: the NDJSON is consumed into an
+`sseCollectWriter`, the collected `data: ...\n\n` frames are folded with
+`sseToOpenAIJSON`, and the folded JSON is served as `application/json`.
+An empty or content-less stream (no delta) correctly returns a 502
+(`proxy.NoCompletionInStream`), matching `handleKiroNonStream`'s contract.
+
+**Verification**
+
+- `go test ./internal/handlers/chat/ -run TestForwardCommandcodeRequest_NonStream`
+  — asserts `Content-Type: application/json`, parsed `chat.completion` shape
+  with the correct `content`, and 502 on a finish-only (empty) stream.
+- `go test ./internal/handlers/chat/ -run TestBuildCommandcodeBody_DefaultsMaxTokens`
+  — fixed: now emits a `text-delta` so the fold produces non-empty content.
+  The test's purpose is asserting `max_tokens` in the upstream body; its fake
+  now produces a probeable stream like every other executor test.
+- `go test ./internal/proxy/executor/ ./internal/handlers/chat/ ./internal/handlers/media/`
+  — 2377 + 481 = 2958 passed.
+
+---
+"9router-go": patch
+---
+
+fix(opencode): alias declared tool names containing "terminal" on the free tier
+
+- The free tier answers 429 FreeUsageLimitError whenever tools[] declares a function whose name contains "terminal" (case-insensitive substring)
+- ConcealFingerprintTools moves gated declarations to alias run_command (numbered on collision), retargets tool_choice and history tool_calls, and restores the caller's original tool names on response payloads
+- Ported from upstream decolua/9router#5328 (fixing #5319)
+
+### Dashboard UI (web/src)
+
+- Surface HTTP status code and server response error details in Request Details modal dialog (`RequestDetailsTab.svelte`).
+- Resolves issue #800 where failed requests displayed only generic `STATUS: error` without status codes (e.g. 404, 429, 502) or visible server error details.
+- Adds `formatDetailStatus` and `extractDetailError` helpers with unit test coverage, and includes before/after screenshot evidence in `docs/screenshots/request-details-error-modal.png`.
+
+### refactor(providers): one wire-contract table for custom node types
+
+The "no choices in OpenAI response" bug occurred because what wire a custom node
+type speaks lived in two separate places that could drift: `compatibleNodeLane`
+knew anthropic-compatible nodes dial `/messages`, while the format machinery
+still treated them as Chat Completions.
+
+This collapses the contract into `providers.CompatibleNodeWires`: one entry per
+node type declaring its lane and format together. Detection
+(`isCompatibleNodeProvider`), the lane (`compatibleNodeLane`), and the config
+stamping (`getProviderConfig` via `compatibleNodeFormat`) all read that table,
+ensuring lane and format remain in sync.
+
+Three test suites pin the table:
+- providers: lane/format coherence per entry.
+- chat: lane, format, and `getProviderConfig` stamping asserted per node type.
+- dashboard: `nodeIDPrefixes` covers exactly the wire-table keys.
+
+### fix(chat): treat anthropic-compatible nodes as Claude Messages upstreams
+
+An anthropic-compatible custom node dials the `/messages` lane, but previously
+nothing informed the wire-format machinery that the node speaks Anthropic
+Messages: its resolved config carried no `Format`, so a `/v1/messages` client's
+body was converted to Chat Completions, POSTed to the Messages endpoint, and the
+Claude-shaped reply failed in `TranslateOpenAIToClaude` as "no choices in OpenAI
+response" (HTTP 502 on every attempt, combo falling through a healthy model).
+
+Three changes close the lane end to end:
+
+- `getProviderConfig` declares `Format: claude` for anthropic-compatible nodes,
+  ensuring `/v1/messages` requests reach the endpoint in Claude shape and Chat
+  Completions clients convert before dialing.
+- `TranslateOpenAIToClaude` relays a body that is already an Anthropic Message
+  response unchanged (with its usage) instead of failing on missing choices.
+- `forwardRequest` handles `upstreamClaude` / `clientClaude` combinations:
+  translates Claude replies back to OpenAI format for Chat Completions clients,
+  and relays Claude replies as-is for Claude clients.
+
+### Dashboard: the API-key list stops paying one ledger scan per key
+
+- **`GET /api/keys` reads every key's token spend in one statement.** The
+  listing filled `usedTokens` with a read per key row, and each read paid
+  three queries plus one ledger pass: the key row again, its reset mark,
+  and the three-spelling history sum with its carryover lookup. On a
+  108k-row ledger of 5 keys that measured ~860 ms server-side — the
+  request the dashboard opens on. `GetApiKeyTokenUsageForKeys`
+  (`internal/db/quota_reset.go`) now answers the whole page from one
+  `VALUES`-CTE statement: the reset marks are read once per page and ride
+  the statement as a column, and every key's spend is computed by the same
+  terms the per-key reader uses (the three recorded spellings, the key's
+  reset mark, the carryover row), so a key reset between two listings
+  starts at zero in the list exactly as the limiter sees it. A database
+  created before the resettable token budget (#365) cannot compile the
+  mark read and falls back to the per-key reader, which already degrades
+  the missing column to a lifetime sum — the fast path is a fast path and
+  never changes the numbers the dashboard shows. The handler keeps its
+  fail-open contract: a failed usage read logs a warning and reports zero
+  spend rather than failing the listing.
+- **The ledger indexes the sum reads are covering composites now.** The
+  single-column `idx_uh_apikey` / `idx_uh_clientkey` pair answered the
+  multi-index OR but still fetched one table row per ledger entry to reach
+  the token columns. They are replaced by
+  `idx_uh_apikey_tok` / `idx_uh_clientkey_tok` in the `idx_uh_prov_tok`
+  shape — `(column, id, promptTokens, completionTokens)` — so the reset
+  mark is a range inside the index and the sum is answered from the index
+  alone; the narrow pair joins `supersededIndexes`, so an install upgraded
+  in place stops maintaining indexes nothing reads. Every other reader of
+  the same sum rides this too: the reset-quota endpoint and the
+  request-path limiter.
+- **Two plan facts measured on the way, both pinned in code.** A
+  correlated scalar subquery inside the sum's WHERE is re-evaluated per
+  candidate ledger row — the mark as a nested subquery cost 2.5× the whole
+  per-key path, so it travels as a CTE column. And a single-pass
+  `GROUP BY (clientKey, apiKey)` over `IN`-lists measured 4.7× worse,
+  because SQLite does not answer that OR-over-IN through the composites;
+  the correlated-CTE shape is the one kept.
+
+Measured with `BenchmarkApiKeyTokenUsage*` on a ledger seeded from the
+production request counts: the per-key loop the endpoint used to run fell
+53.7 → 33.8 ms/op and 4,924 → 916 allocs from the composites alone, and
+the batched read the endpoint pays now is 37.7 ms/op with 311 allocs —
+two statements for any key count, where the old path grew 1 + 3N.
+Verified with `TestGetApiKeyTokenUsageForKeysMatchesPerKeyRead` (batched
+equals the per-key reader for every key across all spellings, a mid-page
+reset mark, a carryover row and an unrelated key's rows),
+`TestGetApiKeyTokenUsageForKeysQueryPlan` (the exact statement plans
+through both composites, no `SCAN usageHistory`),
+`TestGetApiKeyTokenUsageForKeysLegacySchema` (a pre-#365 database still
+gets correct numbers through the fallback), the updated legacy-migration
+tests, and `go test ./internal/db/ ./internal/handlers/...` green.
+`AGENTS.md` §4.A pins the lesson as a house rule: SQLite access reads one
+statement per page, never N+1.
+
+### feat(connect): write each client's real context window so auto-compact can fire
+
+Auto-compact has two inputs: the usage each response reports, and the context
+window the client believes the model has. The first is handled by the streaming
+usage fix; the second never came through the API at all — it lives in each
+client's own config, and the connect flow either wrote a hardcoded guess
+(crush and pi: 128000) or nothing at all (claude, codex, opencode, omp). The
+gateway already knows the real numbers — `/v1/models` publishes
+`context_length` and `max_completion_tokens` per model from declared custom
+limits, the capability tables and combo seat minimums — so the connect handler
+now resolves them through that same chain and hands them to the adapters.
+
+Claude Code gets `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (the documented way to
+state a proxied model's window; the narrowest across the model and all tiers,
+clamped to the CLI's 100k–1M bounds). Codex gets `model_context_window`,
+`model_auto_compact_token_limit` at 90% of the window and
+`model_max_output_tokens` as TOML integers — and reset removes the three,
+because they are global and would otherwise describe this gateway's window to
+whatever provider the user configures next. OpenCode gets
+`limit: {context, output}` on the model entry, which is the only thing that
+gives a model unknown to models.dev a context meter and auto-compact at all.
+Crush and pi prefer the resolved values over their old hardcodes, field by
+field. oh-my-pi gets a `models` entry with `contextWindow`/`maxTokens` beside
+its proxy discovery. A model the catalog does not know stays absent, and every
+adapter then writes exactly what it wrote before.
+
+Two enabling fixes in the write path. The TOML patcher only ever wrote quoted
+strings; a scalar `ValueJSON` (integers and booleans) is now written raw on
+the append and replace paths, with everything else still refused. And a plan
+whose result was an empty document was silently discarded — for TOML that is a
+legitimate outcome, so a config holding nothing but this gateway's keys could
+never be reset; the file just stayed. The no-op now requires the start to have
+been empty too.
+
+### feat(chat): stream usage to clients so auto-compact can fire
+
+Clients decide auto-compact from the usage each response reports against the
+context window they believe the model has. On the translated paths the usage
+was always zero, so the client's context meter never moved and auto-compact
+never fired — sessions grew past the upstream's real limit and errored there.
+
+Two defects fixed. `TranslateClaudeToOpenAI` never asked the upstream for
+streaming usage (`stream_options.include_usage` — a field the Anthropic
+dialect has no way to request), so most Chat Completions upstreams sent no
+usage chunk at all; and even when an upstream reported usage, OpenAI streams
+deliver it on a trailing zero-choice chunk **after** the finish chunk, while
+the translator emitted the terminal `message_delta` at finish — the real
+numbers landed after the client had already been told zeros.
+
+The `/v1/messages` and `/v1/responses` handlers now inject
+`stream_options.include_usage` toward Chat Completions upstreams (Claude-format
+combo members strip the key again, and native Responses upstreams are
+skipped), and the Claude translator defers the terminal `message_delta` until
+the usage chunk arrives — flushing it at `[DONE]`, via `EnsureStreamClosed`,
+or on the shutdown path when it never comes.
+
+Two usage corrections ride along: the client-facing `input_tokens` now
+excludes the cached subset (OpenAI's `prompt_tokens` is cache-inclusive,
+Anthropic's `input_tokens` is not, and Claude Code sums both, so the old
+mapping double-counted), and when the upstream ignores `include_usage`
+entirely the terminal falls back to a seeded body-size estimate so the meter
+still moves. Estimates never enter the usage analytics, and requests carrying
+inline base64 media are not estimated.
+
+### Added
+
+- **Route response headers** (`x-9router-provider`, `x-9router-model`, `x-9router-combo`, `x-9router-attempts`): every successful upstream dispatch now sets informational headers so clients and debugging tools can see which provider, model, combo name, and attempt count served the request. Enabled by default; disable with `NINEROUTER_ROUTE_HEADERS=0`. Wired into single-provider fallback, combo (Chat Completions + Messages lanes), and fusion dispatch paths.
+
+### Proxy pool: universal edge-relay support for every provider
+
+An edge relay proxy pool (Vercel, Cloudflare Workers, Deno Deploy, Netlify
+Functions) is now supported by **every** provider by construction, rather than
+by per-provider manual plumbing.
+
+- **The architectural root cause.** A relay is not a CONNECT proxy: it is an
+  ordinary HTTPS endpoint that forwards to whichever upstream `x-relay-target`
+  and `x-relay-path` name. In this repository that contract was implemented by
+  rewriting a provider's `BaseURL` to the relay host and stamping the headers
+  into `StaticHeaders`. Every provider that built its own requests had to
+  re-apply the contract by hand: four did (`opencode-zen`, `opencode-go`,
+  `minimax-code`, `freebuff`), and every other provider failed.
+  - **Qoder** signed COSY over the relay host (`403 Signature invalid`) and dialled the relay with no destination (`400 Missing x-relay-target header`).
+  - **Trae** appended its session path to the relay host, landing on the relay root.
+  - **Zed** and **Windsurf** derived origin from `BaseURL` and dialled the provider directly, leaking the operator's IP.
+  - The **embeddings** route (`media.go:157`) used `h.Client` directly, skipping any assigned pool entirely.
+- **Relay as a transport, matching upstream.** Upstream expresses relays at
+  fetch time — `proxyAwareFetch` takes `proxyOptions.vercelRelayUrl` and rewrites
+  the dial while leaving the requested URL untouched. This port now does the
+  same via `proxy.RelayTransport` (`internal/proxy/relay_transport.go`):
+  `GetClientForConnection` wraps the connection's client with a `RoundTripper`
+  that moves the dial to the relay and names the URL the caller actually built.
+- **`BaseURL` stays the real provider endpoint.** An executor that signs a URL
+  (Qoder COSY) signs the endpoint it actually meant; one that builds a lane path
+  (OpenCode, Trae, MiniMax) appends to the real endpoint; and the relay receives
+  that exact destination on the wire.
+- **Provider-specific relay layers removed.** Hand-rolled relay branches in
+  `opencode_zen.go`, `providers.go` (OpenCode Go free and responses lanes),
+  `minimax_code.go`, and `freebuff.go` deleted: each was an ad-hoc reimplementation
+  of what the transport now does for all of them. `media.go` embeddings route
+  switched from `h.Client` to `h.ChatH.GetClientForConnection(connData)`.
+
+Verified live:
+- `qd/dfmodel` through a live Vercel relay pool answers `OK` (both streaming and non-streaming).
+- `qd/dfmodel` through an HTTP proxy pool answers `OK`, logging `egress=local-http`.
+- Provider config for `openai`, `anthropic`, `trae`, `zed`, `qoder`, `opencode`, `freebuff` all keep their real endpoint while carrying `RelayURL`.
+- Pinned by `relay_generic_test.go`: an arbitrary request from a provider with zero relay code leaves through the relay addressed to its own URL, query strings survive, and an executor-supplied destination is never overwritten.
+
+### perf(chat): fast-path the token normalizer on single-field bodies
+
+`normalizeChatTokenFields` (#766) unmarshaled and re-marshaled every outbound
+Chat Completions body through `map[string]jsontext.Value` to guarantee that
+`max_tokens` and `max_completion_tokens` never travel together to an upstream
+that rejects the pair.
+
+The normalizer only ever changes a body that declares **both** fields. A body
+that cannot declare `max_completion_tokens` therefore cannot be changed by the
+parse, but was paying the full JSON round trip anyway. On an 89 KB body (a
+50-turn agent conversation), that was **230 µs, 99 KB, and 9 allocations** on
+every request, even when the client sent only `max_tokens` or no budget at all.
+
+`mayCarryCompletionTokens` now gates the parse with two literal byte scans
+(`"max_completion_tokens"` and `\u`):
+
+- Bodies without `max_completion_tokens` (the common path):
+  - 1 KB: 8.0 µs / 2.5 KB / 9 allocs → **1.4 µs / 0 B / 0 allocs** (5.7× faster)
+  - 9 KB: 26.3 µs / 10.0 KB / 9 allocs → **6.6 µs / 0 B / 0 allocs** (4.0×)
+  - 35 KB: 96.5 µs / 41.5 KB / 9 allocs → **26.6 µs / 0 B / 0 allocs** (3.6×)
+  - 89 KB: 230.1 µs / 98.9 KB / 9 allocs → **66.8 µs / 0 B / 0 allocs** (3.4×)
+  - throughput pinned to the `bytes.Contains` rate: **~1.37 GB/s** across all sizes
+- Bodies with both fields (the rare failure case):
+  - the scan succeeds and the parse runs as before (4.8 µs / 778 B / 18 allocs)
+
+**Why the escape check.** A JSON member name may be written with `\u` escapes:
+`{"\u006dax_completion_tokens":1}` declares the key without matching the literal
+byte sequence. A scan for the literal alone would skip the normalizer and put
+both fields back on the wire. Every body containing any `\u` escape therefore
+falls through to the parse.
+
+**Verification.** `TestNormalizeChatTokenFields` adds:
+- `both keys escaped are still the keys` — both `max_tokens` and
+  `max_completion_tokens` written with `\u006d`, fails when the escape check is
+  removed (mutation tested);
+- `an escaped value without token fields is untouched`;
+- `a differently cased key is not the key` (`MAX_TOKENS` / `Max_Completion_Tokens`).
+
+Benchmark reproducible via `go test ./internal/handlers/chat/ -bench=BenchmarkNormalizeChatTokenFields`.
+`go test ./internal/handlers/chat/` green; `go vet` clean.
+
+### test(integration): live proof that only one token-limit field reaches the wire
+
+`live_sakoo_test.go` is the only live test for #766's single-token-field guard,
+and it needs `SAKOO_LIVE_KEY` — a credential nobody on this tree has, so the
+guard's end-to-end proof skips everywhere it runs.
+
+This adds a second live lane against `integrate.api.nvidia.com` through a
+custom OpenAI-compatible node, gated on `NVIDIA_LIVE_KEY`. It asserts on the
+bytes the gateway sends, not on the upstream's answer, because NVIDIA accepts
+both `max_tokens` and `max_completion_tokens` with a 200 — probed on 2026-10-29,
+streaming and non-streaming alike. A status check alone therefore cannot tell a
+gateway that strips the duplicate from one that forwards both; the recorded
+body can.
+
+Three cases, all against the real endpoint: a single request, the same request
+through a combo (the lane the original report came from, and the one that
+reaches `tryForwardWithConnection` from `combo.go` rather than `fallback.go`),
+and the two single-field shapes that must pass through unchanged.
+
+**Verified by mutation.** With the guard in `fallback.go` disabled, both
+double-field tests fail on the recorded body
+(`{"max_completion_tokens":64,"max_tokens":32,...}`) and pass again when it is
+restored — so the tests measure the fix, not the endpoint's tolerance.
+
+The model is pinned to `nvidia/nemotron-3-ultra-550b-a55b` because the other
+registry entries on this key answered 410 "reached its end of life" when probed;
+a test pinned to them would report an upstream retirement as a regression. The
+same reasoning drives the skip rule: an upstream-origin failure (410 retired,
+404 not-found-for-account, 503 service overloaded) skips, while the
+`cannot both be set` message — the one upstream answer that IS this bug — fails
+hard.
+
+No credential is required for the suite to pass: without `NVIDIA_LIVE_KEY`
+every test in the file skips, as the Sakoo file already does.
+
+### Usage › Details: the dashboard panels no longer stick on "Loading dashboard..."
+
+- The Details section's Activity Heatmap, Node Health and lifetime cards never appeared. The section was not slow: the read answered in single-digit milliseconds, and the component still painted its spinner over the panels until the page was reloaded. Issue reported as "toggle activity heatmap and node health in detail is very slow and does not open".
+- Cause: #510 replaced the `onMount` read with an `$effect` and left the success path without clearing `loading`. The `.finally()` guard read `if (!cancelled && !settled) loading = false`, but both `.then()` and `.catch()` set `settled = true` first, so the guard was always false — `data` arrived, and the `{#if loading}` branch kept winning. Both the success and the failure path now clear `loading` themselves, matching the pattern `UsageChart.svelte` already used.
+- Every toggle on the section is affected by the same flag: the chevrons opened and closed `heatmapOpen`/`healthOpen` while the body stayed on the spinner, which is what read as "the toggle does not open".
+- Verified in a real browser against a running gateway with all panels enabled: the section paints in ~59 ms and each chevron opens its panel in ~10 ms. `web/e2e/usageDetailsPanels.test.ts` pins the rendered DOM — the panel headers and lifetime cards must exist with no spinner left, and the heatmap chevron must collapse and re-open the grid. The test fails on the pre-fix component and passes after it.
+
+### Settings toggles: every switch audited for latency and effect
+
+All 31 non-sidebar switches in Settings › Profile were exercised one by one in a real browser against a running gateway, measuring click-to-paint and confirming the state actually flips:
+
+- **Latency**: median 33 ms, max 45 ms. No toggle exceeds a two-frame budget, and the DOM churn per click is 0–1 nodes and 3–4 attributes, so no switch re-renders a list. `Advanced settings` is the only one that unfolds content (299 ms, 413 → 984 nodes) — it is a disclosure, not a state change.
+- **Local switches** (`Unit abbreviation`, `Provider card toggle persistence`, `Advanced settings`, `Expand usage details`, `Show USD next to the converted amount`) write localStorage only, with no round trip. `Unit abbreviation` was verified in both directions against a rendered page: ON shows `1.0M`, OFF shows `1,022,149`.
+- **Server switches** (`Require login`, `Force Fallback`, `Enable Observability`, `Enable Global System Prompt`) are form state until Save; the PUT answers in 6 ms and the boot reload that follows costs 5–14 ms per endpoint.
+- **Usage panel switches** (20 of them) each flip their own id in `usagePanelLayout`. Verified end-to-end: hiding `Activity Heatmap`, `Node Health` and `Lifetime KPI cards` removes exactly those three from the rendered Details section while the request table stays.
+- **Provider and connection switches** were measured too, including the per-card on/off (35 ms to flip, 7 DOM mutations), the per-connection switch (29 ms), and the provider-wide switch (159 ms to flip with 7 accounts). The provider-wide path issues one `PUT` per account plus one boot reload; the live-quota reads it used to be suspected of repeating on every toggle do **not** run there — `loadData()` is keyed on `providerId` and a toggle does not change it, so the 7 paced `/api/usage/{id}` reads happen once when the provider is opened and never again on a toggle.
+- `make vet-svelte` unchanged (0 unresolved identifiers, 77 errors against the 77 baseline); `bun test src scripts` 659 pass; `bun test e2e/` 53 pass.
+
+### Usage › Details: the dashboard read runs its queries concurrently
+
+- With the spinner fixed, the Details section still took 310 ms to paint on a 305k-row ledger, and 160 ms of that was `/api/usage/dashboard` itself. The endpoint ran five reads one after another, each a full pass over the trailing week, and the section cannot paint until the last one lands.
+- The five reads now run concurrently. Measured on the same data: 145 ms of query time → 84 ms, and the endpoint 160 ms → 59 ms. `go test -race ./internal/handlers/ -run TestHandleUsageDashboard` is clean, and each goroutine writes its own variable before the wait group joins them.
+- Two of the five reads were redundant and are now derived from the rows the handler already has. A provider's totals are the sum of its models' totals, and the Top Model card is the largest of those same rows, so `FoldUsageGroupByProvider` (33 µs) and `TopUsageGroupByTokens` replace a 22 ms and a 27 ms `GROUP BY` over the identical window. `internal/db/usage_group_fold_test.go` pins both folds against the SQL they replaced, including the tie-break that keeps the card stable, so the two cannot drift.
+- A failed cache-hit read no longer takes the dashboard down: that card falls back to "—" while everything else still renders.
+
+### What is still slow, and why it is not fixed here
+
+- `GET /api/usage/chart?period=all` takes ~850 ms on a 305k-row ledger. The window is the whole table, and the read is a 305k-row scan: measured 470 ms just to stream the rows with no work at all, and 20–50 ms to touch the same row count through a covering index. The trailing-year chart draws only 8,438 (day, model) cells from those 305k rows.
+- Grouping that in SQLite instead is **slower**, not faster — measured 784 ms for the `GROUP BY` against 499 ms for the Go fold — because SQLite builds a temp b-tree over the whole window. That change was written, measured and reverted; the numbers are recorded here so it is not attempted again on the assumption that pushing work into SQL is always cheaper.
+- The real fix is a day-level rollup of the per-family split (the `usageDaily` blob carries totals only, which is why the chart has to reach into `usageHistory` at all), not a different query over the same rows. It is a schema change with a backfill, so it is left out of a bug-fix PR.
+- The `all` preset is the only window affected. `7d` is 30 ms, `30d` 115 ms, and `today` 4 ms.
+
+### Settings toggles: every switch audited for latency and effect
+
+All 31 non-sidebar switches in Settings › Profile were exercised one by one in a real browser against a running gateway, measuring click-to-paint and confirming the state actually flips:
+
+- **Latency**: median 33 ms, max 45 ms. No toggle exceeds a two-frame budget, and the DOM churn per click is 0–1 nodes and 3–4 attributes, so no switch re-renders a list. `Advanced settings` is the only one that unfolds content (299 ms, 413 → 984 nodes) — it is a disclosure, not a state change.
+- **Local switches** (`Unit abbreviation`, `Provider card toggle persistence`, `Advanced settings`, `Expand usage details`, `Show USD next to the converted amount`) write localStorage only, with no round trip. `Unit abbreviation` was verified in both directions against a rendered page: ON shows `1.0M`, OFF shows `1,022,149`.
+- **Server switches** (`Require login`, `Force Fallback`, `Enable Observability`, `Enable Global System Prompt`) are form state until Save; the PUT answers in 6 ms and the boot reload that follows costs 5–14 ms per endpoint.
+- **Usage panel switches** (20 of them) each flip their own id in `usagePanelLayout`. Verified end-to-end: hiding `Activity Heatmap`, `Node Health` and `Lifetime KPI cards` removes exactly those three from the rendered Details section while the request table stays.
+- **Provider and connection switches** were measured too, including the per-card on/off (35 ms to flip, 7 DOM mutations), the per-connection switch (29 ms), and the provider-wide switch (159 ms to flip with 7 accounts). The provider-wide path issues one `PUT` per account plus one boot reload; the live-quota reads it was suspected of repeating on every toggle do **not** run there — `loadData()` is keyed on `providerId` and a toggle does not change it, so the 7 paced `/api/usage/{id}` reads happen once when the provider is opened and never again on a toggle. That hypothesis was tested by re-introducing it and measuring zero quota requests either way, and the change was reverted.
+- `make vet-svelte` unchanged (0 unresolved identifiers, 77 errors against the 77 baseline); `bun test src scripts` 659 pass; `bun test e2e/` 53 pass.
+
+### Usage page: one dashboard read per visit, and no connection poll where nothing draws it
+
+Two sources of repeated work on the Usage page, both invisible to every check below the browser because the rendered page is identical either way:
+
+- **The Details payload was re-read on every section switch.** `AnalyticsView` renders one section at a time, so leaving Details unmounts `UsageDashboard` and coming back mounts a fresh instance — which re-read the whole payload (five SQL reads, ~120 KB on a busy ledger). Measured three reads across five switches. The payload now lives in a module-level cache (`web/src/lib/usageDashboardCache.ts`) with a 60 s TTL, so a switch back to Details draws immediately. A panel being turned back on drops the entry, because that is the operator explicitly asking for a fresh look. Measured after: **1 read across the same five switches**.
+- **The ten-second connection poll ran on every tab.** `App.svelte` re-fetched `/api/connections` (24.5 KB for 46 accounts) and `/api/provider-nodes` (3.5 KB) every ten seconds regardless of which tab was open — including Usage, Quota, Token Saver and Settings, none of which render either list. The poll is now limited to the tabs whose content is drawn from those lists (`endpoint`, `connections`, `combos`, the four media kinds, `proxypools`). A tab that does not draw them still gets a fresh copy on the way in, because `loadData()` runs on navigation.
+
+`web/e2e/usageRequestEconomy.test.ts` pins both as request counts: one dashboard read across five section switches, and zero connection/provider-node reads across two poll ticks on the Usage page. Both assertions fail on the pre-fix code (measured 2 dashboard reads and 4 poll reads in the failing run) and pass after it. `web/src/lib/usageDashboardCache.test.ts` covers the TTL boundary and the invalidation.
+
+### Usage › Overview: the five-second poll no longer carries the breakdown maps
+
+`GET /api/usage/stats` builds five breakdown maps. On a ledger with 411 models the response is **415 KB**, of which the four per-model maps are ~98% — and the Overview polls it every five seconds. Measured **4.9 MB a minute, 1.7 GB an hour**, on a box this project targets at 1 vCPU.
+
+The poll's consumers are the KPI row, the live pulse and the recent-request list: totals, `activeRequests`, `recentRequests`. None of them read `byModel`/`byAccount`/`byApiKey`/`byEndpoint`, and the breakdown table draws exactly one of those at a time.
+
+- `?views=` now selects which breakdowns the handler builds. `views=none` returns totals plus `byProvider` (which the totals are summed from); naming one view builds only that one. Omitting the parameter keeps the previous full shape, so no existing caller changes.
+- The dashboard's five-second poll sends `views=none`; the breakdowns are refreshed on a 30 s tick, which keeps the table current without paying the per-poll cost. A poll merges only the fields it fills, so the table keeps its rows between refreshes rather than blanking for four seconds out of five.
+- Measured after: **415 KB → 5.1 KB per poll, 4.9 MB/min → 870 KB/min**, with identical totals (1372 requests, same token and cost sums) and the breakdown table still 431 rows across polls.
+
+`internal/handlers/usage_stats_views_test.go` pins the default shape, the totals-only shape (exact totals, empty maps, `byProvider` present), a single named view, and that an unknown name is ignored rather than failing the read. `web/e2e/usageStatsViews.test.ts` pins the wire: every poll inside a 13 s window carries `views=none`, and a full read still lands within 33 s so the table cannot freeze on its first load.
+
+### fix(executor): keep the client's output budget on CommandCode
+
+`commandcodeMaxTokens` resolved the budget from `max_tokens ?? max_output_tokens
+?? 1024`. It did not read `max_completion_tokens`, the spelling
+`normalizeChatTokenFields` leaves behind on a body that carried both (#766). A
+client that sent `max_tokens` and `max_completion_tokens` therefore reached the
+provider with no budget the resolver recognised, and the 1024 default was
+billed in place of what it asked for.
+
+Measured on the real dispatch path (`tryForwardWithConnection` →
+`buildCommandcodeBody`, upstream recording `params.max_tokens`): a request with
+`max_tokens=4096, max_completion_tokens=2048` arrived as **1024** before this
+change and arrives as **2048** after it — the value #766 deliberately kept.
+`max_completion_tokens` alone went from 1024 to its own value.
+
+The new spelling is **last**, not first, so every body that resolved a budget
+before this change still resolves the same one: `max_tokens` and
+`max_output_tokens` keep their precedence, a null value is still absent, and a
+body that names no budget still gets 1024.
+
+**No second field on the wire.** The resolver reads a field; it does not emit
+one. `buildCommandcodeBody` rebuilds `params` from a whitelist, so the provider
+still receives exactly one `params.max_tokens` and no `max_completion_tokens` or
+`max_output_tokens` at either level. `TestBuildCommandcodeBody_SingleBudgetFieldOnWire`
+pins that across the four client shapes, and the same assertion run through the
+full handler path confirms it end to end.
+
+**Verification.** `TestCommandcodeMaxTokensResolution` pins the precedence table
+(seven cases, including the post-normalizer shape and the null-is-absent rule);
+`TestBuildCommandcodeBody_SingleBudgetFieldOnWire` pins the wire shape. Both fail
+on the previous code (`commandcodeMaxTokens() = 1024, want 4096` and
+`params.max_tokens = 1024, want 2048`) and pass with it. `go test
+./internal/proxy/executor/` and `./internal/handlers/chat/` are green, `go build
+./...` is clean.
+
+### fix(ci): skip the usage-write latency probe under the race detector
+
+`TestUsageWriteLatencyProbe` measures wall-clock cost per usage write, and the
+race detector slows every memory access by roughly an order of magnitude: the
+same daily-blob read-modify-write measured **18.6 ms** per request plain and
+**152 ms** under `-race` on this tree. The probe ran in both modes anyway, so
+on `main` it consumed most of the `Race detector` job's 10-minute budget and
+the package timed out at `600.099s` (`758c5af`, run 40840542489, fixed in #783) — the whole
+job failed on a measurement whose numbers were instrumentation, not the write
+path.
+
+The probe now skips itself when the binary was built with `-race`, and keeps
+running in the plain `test` job, where its numbers mean what they claim. The
+`-race` build's coverage of the write path is unaffected: the async writer's
+concurrency contract (FIFO landing, drop-on-full, flush, synchronous mode)
+lives in `usage_writer_test.go` and still runs under the detector.
+
+Verified by mutation, not by reading the guard: with `raceDetectorEnabled`
+forced to `false` in the `//go:build race` file,
+`go test -race -run TestUsageWriteLatencyProbe/daily_blob_grown` times out at
+100 s; restored, the same command skips in 1.1 s and the full package passes
+`-race` in 482 s. Without `-race` the probe still runs end to end (96 s, all
+five scenarios PASS).
+
+### Stop re-fetching a failed live catalog, and skip it for pinned connections
+
+`/v1/models` builds one model set per connection and, for every combo seat,
+`liveCapabilityLeaf` resolves that provider's live catalog. Two behaviors made a
+large install unusable:
+
+- `resolveLiveCatalog` fetched a catalog even when the connection pinned
+  `providerSpecificData.enabledModels`, although the pinned list is the whole
+  catalog for that connection — the fetch could only contradict it;
+- a failed discovery stored nothing, so every combo leaf re-ran the same fetch
+  and waited out the 10s `liveCatalogFastHTTP` deadline again.
+
+On a real install (3800 connections, 309 combos, 174 custom nodes) a single
+`GET /v1/models` ran 311s and then dropped the connection; with the pins already
+written it still took 52s cold.
+
+`resolveLiveCatalog` now returns early for a pinned connection and stores a 60s
+negative cache entry when discovery fails, so a dead endpoint costs one timeout
+per minute instead of one per combo leaf. Measured on the same install:
+`/v1/models` 311s (aborted) → 1.7s cold, 2.2s warm (4252 models); `/v1/models/<id>`
+answers instead of timing out; chat is unchanged (554ms).
+
+Verified by `TestResolveLiveCatalogPinnedEnabledModelsSkipsFetch` (zero upstream
+calls for a pinned connection) and `TestResolveLiveCatalogCachesFailure`
+(three resolutions, one upstream call); both fail on `main`.
+
+### Qoder: OSS attachment uploads, message rewriting, and billing block detection parity
+
+- Upstream `open-sse/shared/qoder/attachments.js` ported to Go: inlined image data-URIs are uploaded to Qoder's `/algo/api/v2/image/upload` endpoint via COSY-signed multipart PUT and replaced with their returned OSS URLs.
+- Large non-image files (PDFs, docs) and upload failures (>512 KiB) become clean stub blocks (`[file omitted: ...]`) instead of blowing the ~6 MiB JSON request payload budget. Small images (≤512 KiB) fall back to inlined data-URIs on upload failure.
+- Ollama `msg.images` sidecar arrays are folded into message content so Qoder vision models receive them properly.
+- Billing block detection in `qoderIsBillingBlock` upgraded to full parity with upstream `isBillingBlock`: handles parsed numeric or string `code` ("110", "112"), case-insensitive `pricingUrl`, and whitespace-tolerant legacy regex match.
+- Fixed OAuth token expiry check in `IsExpired` for providers with no stored `expiresAt` (such as Qoder device tokens) and skipped refresh attempts when no OAuth refresher is registered for the provider, preventing false expiration warnings.
+- A queued Qoder model whose caller runs out of budget now reports the queue state (503, "still queued ... queueType=p3") instead of a bare `context canceled`. `isClientCanceled` no longer treats the gateway's own deadline as a client hangup, which was making a throttled model appear as `HTTP 499: client closed request` on the dashboard Test button.
+- A billing/quota refusal now reaches the caller as the 403 upstream means instead of a 502 gateway error: `qoderRewoundStreamError` recognizes the emitted `error` envelope. chatCore reads 403 as `insufficient_quota` and falls back, where a 502 read as a gateway fault.
+- A Qoder billing refusal (code 110/112, `pricingUrl`) is classified model-scoped, matching upstream `markAccountUnavailable` ("All errors lock per model, not per account"). Parking the whole connection removed the account's free models too, so one `dmodel` refusal answered every later `dfmodel` request with "all in cooldown".
+- A queued Qoder model no longer stalls the request for the whole queue window. The executor drained the refusal's SSE body with `io.Copy(io.Discard, ...)`, and Qoder holds that stream open until the window elapses — measured at 44s of a 45s dashboard-probe budget, so a click returned `HTTP 499` having learned nothing. The body is now closed without draining, and `qoderQueueFitsBudget` refuses a window that cannot finish inside the caller's remaining budget instead of sleeping into the deadline.
+- Dashboard probe latency for a throttled Qoder model dropped from 45s to 30s, and now reports the queue state (503, `queueType=p3`) instead of a timeout. A queued model is never a 499 and never a gateway fault.
+- A billing/quota refusal on the **first** SSE frame now reaches streaming clients as the real HTTP status upstream sends (403 for billing, the envelope's own 4xx/5xx otherwise, 502 as fallback), not as an error marker inside a 200 stream. The in-band shape read as success, so chatCore never reached the failover loop: a `dfmodel` out of credits on one account was returned to the client raw instead of replayed against another account. Mid-stream errors after completion bytes still ride the stream, matching upstream `wrapQoderSSE`.
+- The queue-timeout 503 (`still queued ... queueType=p3`) is classified model-scoped, so it locks the refused model alone; the account lock it also triggered parked every other model on the connection behind one busy queue.
+- **Root cause of "dfmodel never works on the Go port":** the chat payload echoed the catalog's `model_config` verbatim, including `source: "system"`. Qoder routes the chat by that field — `source:"system"` places the request in the managed lane, which answered `10605/queueType=p3` indefinitely (10+ minutes) for a free model, while the identical payload with `source` absent (or `"user"`) is served immediately. Verified live against the upstream account with the upstream Node signer: minimal config → clean stream in ~500 ms; full catalog config → queued every time; dropping any other single field still queued. The chat payload now echoes the catalog entry minus `source`; `X-Model-Source` keeps reporting the catalog value. After the fix the same request through the Go gateway completes in ~1.6 s.
+- Streaming first-frame billing refusals now surface as the real HTTP status (403), so the failover loop classifies them as `insufficient_quota` and tries the next account instead of reporting success with an in-band error marker.
+
+### perf(executor): stream mislabelled SSE live, and transport hygiene from the latency sweep
+
+The generic OpenAI executor (every `openai-compatible-*` custom node) and
+CodeBuddy classified a streaming request whose upstream mislabels the body
+with a non-event-stream Content-Type by reading the whole body first — a
+provider that streams SSE under `application/json` paid for the entire
+generation before its first byte. A bounded head sniff decides instead: the
+sniffed head plus the live body stream frame by frame, and only a genuine
+document is read whole.
+
+Also: the unregistered `executor.ForwardGemini` (zero callers, buffered the
+whole response before streaming) is deleted — its stream helpers stay for
+`ForwardOpencodeGo`'s gemini route — and the MITM proxy now shares one
+`http.Client` instead of building a fresh transport per intercepted request.
+
+### perf(translator): fetch remote inline images in parallel on a shared transport
+
+The inline image prefetch walked image blocks sequentially on a throwaway
+transport: every pass built a fresh `http.Client` + `http.Transport`, and
+each remote image downloaded one after another. A turn carrying four
+screenshots paid four back-to-back TCP+TLS handshakes — seconds of TTFT for
+the Gemini-family targets that inline (`antigravity`, `gemini-cli`, `vertex`,
+`ollama`, `kiro`, `commandcode`).
+
+The URLs are now collected in document order, downloaded concurrently
+(bounded at 4 workers) in waves sized to the budget still open, and the
+rewrites are applied in document order on a transport built once per
+`allowLoopback` mode and reused across passes. Sizing each wave to the open
+budget is what keeps the sequential walk's contract: a refusal never spends
+the budget, so a run of broken URLs must not stop the images behind them from
+being fetched. The budget is charged at apply time, per inlined image;
+unbudgeted URLs keep their remote form. Every SSRF
+rule is untouched: URL validation, the dial-guard against private/reserved
+targets, redirect re-validation with the 3-hop cap, the MIME allowlist,
+magic-byte labelling, and the byte caps.
+
+### perf(chat): move usage persistence off the response goroutine
+
+`logUsage` ran every write it needed — the `usageHistory` row, the
+`requestDetails` row, the compression-analytics row, and the daily aggregate
+read-modify-write — on the goroutine that had just finished streaming the
+response. All of it shares one WAL writer and one global daily-blob mutex, so
+completions serialized behind each other, behind the dashboard's own writes,
+and behind a daily blob that costs ~21 ms per request once a busy day has
+grown it past 400 KB (measured: p50 14.6 ms / p95 92 ms against a 460 KB
+blob; p95 11.6 ms contended).
+
+The three persistence units now enqueue onto a single FIFO background worker
+that keeps the row → detail → daily order the synchronous path had. The queue
+is bounded at 256: overload drops usage rows with a running dropped-total
+warning instead of pushing the ledger's backlog onto responses. Metrics, TPM
+settlement and the recent-requests ring stay synchronous. Graceful shutdown
+drains the queue so the last turns are not billed into nothing. Measured
+response-path cost after a busy day: p50 78 ns / p95 97 ns.
+
+Comes with a live timing e2e for antigravity `gemini-3.8-flash-high` (behind
+the usual `9ROUTER_LIVE_TESTS=1` gate) and a per-request
+`upstream response headers` log on the gemini-native path — the number that
+separates "the model was thinking" from "the gateway was slow".
+
+### Combos: the response timeout no longer cuts off the last candidate actually tried
+
+- **`firstTokenTimeoutMs` now spares the last member a combo pass will really
+  send a request for, not the last member stored.** The guard was index-based
+  (`i == len(models)-1`), but the loop `continue`s past an entry that does not
+  resolve and past a provider whose model is locked, and `withoutBenchedModels`
+  can shorten the list before the loop starts. When the final entry was skipped
+  for either reason, the timer stayed armed on the last member that could still
+  answer: a three-member combo whose third member was model-locked returned
+  `504 model response timeout` while the same combo with the timeout disabled
+  answered `200` from the second member. Both the chat loop and the Messages
+  loop now compute the last index that resolves and is available before the
+  pass, and the zero-content probe and stream peeker use it too, so they share
+  the same blind spot fix.
+- The setting still only *advances* a combo, never makes one fail sooner
+  (#744, upstream `decolua/9router#5214`): a candidate that will be tried last
+  keeps the gateway's normal deadline.
+- Verified: `TestComboTimeoutSparesLastTriedCandidate` (three members, third
+  model-locked, second slow but healthy) fails on the pre-fix tree with
+  `status = 504, want 200` and passes after; mutating `lastTriedComboIndex` back
+  to `len(models)-1` makes it fail again, so the guard is not decoration.
+  `go test ./internal/handlers/chat`, `go test -race -run TestCombo`,
+  `go test -tags=integration ./internal/integration/...` and the diff-scoped
+  `golangci-lint` all pass.
+
+### Dashboard: Escape closes only the topmost dialog
+
+- **Escape in the model picker no longer closes the combo dialog under it.**
+  With **Add Models Manually** open over Create/Edit Combo, Escape closed the
+  combo dialog (losing its unsaved edits) and left the picker floating over the
+  page: the picker had no Escape handler and `Modal` listened on the document.
+  A `Modal` stacked on a `Modal` (a confirm over a form) closed both for the same
+  reason. Dialogs now register on one escape stack (`lib/ui/escapeStack.ts`)
+  and only the most recently opened one answers the key.
+- Verified: `escapeStack.test.ts`, `make vet-svelte` (77, at the baseline),
+  oxlint, build, and in a browser against a live gateway (picker closes alone;
+  a second Escape closes Edit Combo).
+
+### Combos: a failed connection is not retried for the same entry
+
+- **A combo entry no longer resends the same request to the same connection.**
+  A failure outside the retryable statuses (400 `model_not_supported`, 422,
+  500, a provider-limit refusal) neither locked nor excluded the connection, so
+  every one of the ten connection attempts for the entry picked the same
+  account. On a single GitHub Copilot account a `gpt-6-astra` 400 made 10
+  identical upstream calls (~2.7 s) before the combo moved on. Each entry now
+  excludes the connections it already tried; the exclusion is per entry, so a
+  connection that rejected one model still serves the next member. Matches
+  upstream's account loop, which excludes a failed connection
+  (`excludeConnectionId`) instead of resending to it.
+- Verified: `TestComboNonRetryableErrorTriesEachConnectionOnce` (400/422/500,
+  chat and messages: 10 calls before, 1 after), the integration suite, and a
+  live GitHub Copilot run (11 upstream calls → 2, ~2.7 s → ~0.85 s).
+
+### Features
+- **usage**: Add GLM reset cards inventory and redemption for Z.ai international accounts (upstream decolua/9router#5269 parity). Adds `GET` and `POST /api/usage/{connectionId}/glm-reset-cards`, integrates reset card counts into GLM usage responses, and adds the reset cards modal in Quota Tracker.
+
+### feat(chat): session affinity sticky round-robin for multi-account prompt caching
+
+- Add `SessionAffinityStore` in `internal/handlers/chat` to bind multi-turn client conversation sessions to upstream accounts when rotation is enabled.
+- Optimize multi-account setups (e.g. running multiple workspace or terminal sessions across Codex/OpenCode/Claude accounts) so multi-turn conversations stay pinned to the same account prefix cache (>85-95% cache hit), while new sessions balance across available accounts in rotation order.
+- Support failover re-binding: when an assigned account encounters HTTP 429, 401, or enters cooldown, the session automatically falls over to the next eligible account and re-binds.
+- Extract session identifiers from request headers (including `x-claude-code-session-id`, `x-session-id`, `x-opencode-session`, and `x-session-affinity`).
+
+### fix(providers): a custom node's baseUrl is a prefix, so its lane is appended again
+
+A custom provider node whose base URL carries a path beyond a version prefix
+received the request at the base URL itself. Pointing an `openai-compatible`
+node at `https://developer.amd.com.cn/radeon/api/v1` sent the POST to that exact
+path, the upstream answered 404, and the operator saw nothing more than
+`HTTP 404: 404 Not Found` (#768).
+
+The completion helper used here leaves a multi-segment path alone, which is
+correct for the Ollama Local host field — an endpoint the operator typed — and
+wrong for a node, whose `baseUrl` is a prefix by contract. Upstream appends the
+lane unconditionally (`open-sse/executors/base.js` `buildUrl`:
+`` `${normalized}${path}` ``, with the path chosen by
+`resolveOpenAICompatibleApiType`), so the same configuration answers 401 there
+instead of 404. Verified against the live host: the bare path answers 307/404
+while `/chat/completions` answers 401, i.e. the route exists and only the key is
+missing.
+
+`compatibleNodeLaneURL` now completes a node's base URL by that contract, and
+the shared helper keeps its shape rule for the registry and Ollama Local
+overrides. The lane follows the node shape rather than a guess: `/messages` for
+`anthropic-compatible-*`, and `/responses` or `/chat/completions` for
+`openai-compatible-*` by its stored `apiType` — falling back to the node id for
+`responses`, as upstream's `resolveOpenAICompatibleApiType` does, because a
+connection row written before the dashboard began syncing `apiType` carries
+none. A `custom-embedding-*` node keeps `/chat/completions`, because the
+embeddings handler derives its own URL from the resolved config and would
+otherwise append `/embeddings` twice.
+
+A base URL that already names a route is used as-is. The route table is the
+parent helper's full list rather than only the lanes this function appends:
+`/chat/completions`, `/messages`, `/responses`, `/completions`, `/chat`,
+`/embeddings`, `/api/chat` and `/api/generate`. Those last four matter because a
+node that stored `/v1/chat`, `/v1/completions` or an Ollama-shaped `/api/chat`
+was dialled exactly as configured before this rule existed — appending a lane
+behind one would have turned a working node into a doubled path. A bare host or
+a `/v1` root resolves exactly as it did before, so a node that already worked
+keeps the URL it had.
+
+Both branches that build a node config go through it — the connection's own
+`providerSpecificData.baseUrl` and the node row's `baseUrl` fallback — because
+each carried its own copy of the completion.
+
+Tests: `internal/handlers/chat/compatible_node_lane_test.go` covers the URL
+mapping across all three node shapes and both `apiType` lanes, the resolution
+through `getProviderConfig` on both branches, and a request through the real
+handler whose fake upstream asserts the path it was dialled on. The
+end-to-end case fails on the pre-fix tree with
+`upstream saw path "/radeon/api/v1", want "/radeon/api/v1/chat/completions"`
+and passes after. Five further cases pin the shapes this change must NOT move —
+a stored `/completions`, `/chat`, `/api/chat` and `/api/generate`, plus a
+`responses` node with no stored `apiType` — and each fails with a doubled or
+wrong path when the rule is reverted. `go test ./internal/handlers/chat/
+./internal/handlers/media/ ./internal/proxy/... ./internal/handlers/dashboard/`
+is green.
+
+---
+"9router-go": patch
+---
+
+fix(codex): add session_id header, prompt_cache_key injection, reasoning continuity, and responses allowlist
+
+- Pin prompt cache routing by forwarding `session_id` header to `chatgpt.com/backend-api/codex/responses` (falls back to connection ID or "default")
+- Inject `prompt_cache_key` into request body for session continuity when absent, matching upstream `open-sse/executors/codex.js`
+- Include `reasoning.encrypted_content` when reasoning effort is active for multi-turn reasoning continuity with `store=false`
+- Strip server-generated item references and IDs (`rs_`, `fc_`, `resp_`, `msg_`, `item_reference`) from Responses input
+- Strip unsupported parameters and enforce `RESPONSES_API_ALLOWLIST` for Codex upstream calls
+- Support `workspaceId` and `accountId` as fallbacks for `ChatGPT-Account-ID` header
+- Preserve `prompt_cache_key` across Chat Completions to Responses API translation
+
+### fix(chat): never forward both `max_tokens` and `max_completion_tokens`
+
+A streaming request through a custom OpenAI-compatible node was answered
+`400 max_tokens and max_completion_tokens cannot both be set`. The client sent
+both fields — some OpenAI-compatible clients do, since the two spellings are
+both legal on the wire — and the gateway forwarded the body untouched on the
+Chat Completions path.
+
+`renameMaxTokensBody` only rewrites the body for the registry `openai` provider.
+A custom node (`openai-compatible-chat-*`) takes the generic `ForwardOpenAI`
+path, which forwards the client's bytes verbatim, so the duplicate reached the
+upstream. The upstream in the report (Sakoo, backed by GitHub models) rejects
+the pair on a streamed call and accepts either field alone — verified against
+the live endpoint: `max_tokens` alone 200, `max_completion_tokens` alone 200,
+both 400.
+
+**The gateway now guarantees a single token-limit field on the Chat Completions
+wire.** `normalizeChatTokenFields` runs in `tryForwardWithConnection`, after
+every outbound rewrite and before dispatch, so a single-model attempt and a
+combo attempt (the reported failure was a combo) hit the same guard. When both
+fields are present the explicit `max_completion_tokens` value is kept and
+`max_tokens` is dropped — upstream's `renameParams` direction for the modern
+OpenAI dialect. When the client sends one field, it passes through unchanged;
+when it sends neither, the upstream default stands. Nothing is injected.
+
+Scoped to `endpoint == "/v1/chat/completions"`: the Responses wire carries
+`max_output_tokens`, and the Messages wire spells the limit `max_tokens` only,
+so neither can produce the pair.
+
+**Verification.** `TestForwardRequest_SingleTokenFieldOnWire` pins the four
+cases (either field alone, both, neither) against a recording upstream. The live
+tests in `internal/integration/live_sakoo_test.go` drive the real router against
+`api.sakoo.biz.id` through a recording proxy, and assert on the bytes the
+gateway actually sends rather than on the upstream's answer — the live endpoint
+has since started accepting the pair, so a 200 alone would not distinguish a
+fixed gateway from an unfixed one. Disabling the guard makes both the
+single-model and the combo live test fail with the recorded duplicate body;
+re-enabling it turns them green, three runs in a row.
+
+The live tests are gated on `SAKOO_LIVE_KEY` and skip in CI.
+
+### 🐛 A `/v1/responses` turn cut mid tool-arguments now ends `response.incomplete`, not a false `completed`
+
+When a combo resolved to an OpenAI-compatible Chat Completions upstream, a streamed
+`/v1/responses` turn whose tool-call `arguments` were cut mid-token still closed with
+`response.completed` and `status: "completed"`. Codex Desktop read that as a successful
+turn, then failed to parse the arguments (`EOF while parsing a string at line 1 column N`)
+with nothing on the wire to retry on — 36 such errors on 224 requests, and 26 of 64 turns
+finishing with an empty final message, all logged as `status=200` by the gateway.
+
+- **The bridge does not truncate.** The reported capture with exactly 100 argument deltas
+  looked like a cap, so it was measured rather than assumed: 200 argument fragments fed
+  through `StreamChatToResponses` arrive as 200 `response.function_call_arguments.delta`
+  events. Neither the bridge, the translator, nor the SSE scanner has a delta or argument
+  limit (the scanner allows 10 MiB lines, and the upstream body is read unbounded).
+- **The missing signal was the defect.** `closeToolCall` buffered whatever arrived and
+  closed the item with it, and `sendCompleted` hardcoded `status: "completed"`. A buffer
+  that cannot parse is the shape a stream cut between two argument tokens leaves, so the
+  translator now records `Incomplete` and the terminal event becomes `response.incomplete`
+  carrying `incomplete_details.reason: "tool_call_arguments_incomplete"`.
+- **The reason names the cause the upstream gave.** A truncation the upstream attributed
+  to `finish_reason: "length"` is reported with the reason the Responses API already
+  defines for it, `max_output_tokens`; a stream that simply ends — the issue's case — has
+  no finish_reason to inherit, so the added `tool_call_arguments_incomplete` names it.
+- **The partial arguments still reach the client.** Withholding them would leave the client
+  holding a `function_call` item with no end, which is worse than an unparsable one it can
+  report. The item closes with the bytes that arrived, exactly as before.
+- **Custom tools are exempt.** Their input is a freeform program, not JSON, so a buffer
+  that does not parse is the normal case and must not be read as truncation.
+- **The non-streaming converter accepts the new terminal.** `ChatResponseToResponses`
+  picked the object out of `response.completed` only; a truncated non-streaming body would
+  have made it return an error, and the caller relays the raw Chat body on error — the
+  malformed reply that conversion exists to prevent. It now accepts `response.incomplete`.
+
+**Verification:** `TestTranslateOpenAIToResponses_TruncatedToolArgumentsAreIncomplete`
+(six cases: cut mid-token, cut before any token, cut by `finish_reason: "length"`, complete
+arguments, no arguments, custom-tool freeform),
+`TestTranslateOpenAIToResponses_TruncatedToolArgumentsStillCloseTheItem`,
+`TestTranslateOpenAIToResponses_IncompleteIsStickyAndTerminalIsSingle`,
+`TestStreamChatToResponses_TruncatedToolArgumentsReportIncomplete` (the real bridge path:
+no `response.completed`, `status: "incomplete"`, the reason named, every fragment delivered),
+`TestStreamChatToResponses_CompleteToolArgumentsStayCompleted` (a healthy tool turn is
+untouched), and `TestChatResponseToResponses_TruncatedToolArgumentsStayConvertible`.
+End to end through the real router and a combo:
+`TestResponsesStreamTruncatedToolArgumentsEndIncomplete` and
+`TestResponsesStreamCompleteToolArgumentsStayCompleted`.
+`go test ./internal/translator/ ./internal/proxy/... ./internal/handlers/chat/` and
+`go test -tags=integration ./internal/integration/` green.
+
+---
+"9router-go": patch
+---
+
+fix(analytics): fix hourly trend tooltip clipping and responsive text overlapping
+
+- Streamline hourly trend inspection: display rich interactive metrics in the header banner on hover without obstructing chart columns, accompanied by active bar highlight ring and brightness
+- Add interactive hover inspection banner in chart header for instant, high-contrast metrics visibility
+- Add active bar highlight ring and brightness on hover
+- Prevent table text squishing and clipping by setting appropriate min-widths on provider, model, and top savers tables
+- Add flex-wrap and gap to breakdown items and legends to avoid text overlapping on narrow viewports
+
+### Bug Fixes
+- **responses**: Preserve GitHub Copilot context overflow errors as `response.failed` event for streaming `/v1/responses` clients. Normalizes Copilot HTTP 400 `invalid_request_body` with `"Your input exceeds the context window..."` to standard `context_length_exceeded` error code and emits a terminal `response.failed` SSE event (upstream decolua/9router#5280 parity).
+
+### Features
+- **Combos Batch Model Testing**: Added dead/alive batch model testing for combos (upstream `decolua/9router#5246` parity, resolving #759). Exposes `POST /api/combos/{id}/test-models` for sequential model probing without socket exhaustion across persisted and draft combos, and adds real-time visual status pills (alive/dead/spinner), latency badges, and `X/Y Alive` summary to combo cards on the dashboard.
+
+### fix(tokensaver): use deterministic JSON marshaling to preserve prompt prefix caching
+
+When token savers (RTK, Caveman, Ponytail) are enabled, they rewrite request messages, system prompts, or tool outputs. Previously, `internal/tokensaver` serialized mutated JSON envelopes using `json.Marshal` without `Deterministic(true)`. In Go's `encoding/json/v2`, map member iteration order is randomized per call, causing prompt prefix cache misses across session turns on all upstream providers (OpenAI, Claude, DeepSeek, Gemini, Kimi).
+
+This fix adds `json.Deterministic(true)` to all request serialization seams in `tokensaver`:
+- `InjectSystemPrompt`, `injectChatSystemPrompt`, `injectResponsesSystemPrompt`, `InjectSystemPromptClaude`
+- `CompressMessagesWithConfig` (RTK tool message compression)
+- `CompressInputMessages` (Caveman input compression)
+- `marshalBody` (Custom prompt injection)
+
+Verified: Added `TestTokensaverSystemPromptsAreDeterministic` covering Chat, Responses, Claude, and RTK compression paths. All `internal/tokensaver` tests pass.
+
+### fix(providers): preserve prompt caching with deterministic JSON marshaling across providers
+
+Upstream LLM providers (OpenAI, Claude/Anthropic, Gemini, DeepSeek, Kimi, NVIDIA NIM) key their prompt prefix caching on byte-identical request prefixes. Go's `encoding/json/v2` randomizes map member iteration order by default, which causes request rewriting seams (such as parameter renaming, schema sanitization, and header/envelope wrapping) to produce different byte sequences across turns, resulting in 100% prompt cache misses and rapid quota exhaustion.
+
+This fix ensures deterministic JSON marshaling (`marshalStable` / `json.Deterministic(true)`) across all request transformation pathways:
+- `openai`: `renameMaxTokensBody`
+- `providers`: `ensureMessagesFor`, `ForwardKimchi`, `ForwardIflow`
+- `nvidia`: `normalizeNvidiaReasoning`
+- `zed`: `BuildZedCompletionBody`
+- `antigravity`: `WrapForAntigravity`, `hardenAntigravityRequest`, `StripThoughtSignatures`, `ReplaceThoughtSignatures`, `cloakToolDeclarations`
+- `opencode`: `ApplyFingerprintSystemPrompt`
+- `responses`: `ResponsesToChatRequest`, `convertResponsesContent`
+- `tools`: `FitToolNames`, `CleanParametersSchema`, `SanitizeOpenAITools`, `EnsureTrailingUserTurnInBody`, `sanitizeToolArgs`
+
+Verified: Added regression tests to `TestWireBodiesAreDeterministic` and `TestFilterToOpenAIFormatJSONDeterministic`. All tests in `./internal/proxy/executor/...` and `./internal/translator/...` pass.
+
+### fix(codex): use deterministic JSON marshaling to preserve OpenAI prompt prefix caching
+
+- Fix `buildResponsesBody`, `stripCodexUnsupportedTokenParams`, `rewriteCodexUpstreamModel`, and `applyCodexCompact` using default non-deterministic `json.Marshal` from `json/v2`, which randomized JSON map keys across turns and caused 100% prompt cache misses on OpenAI Codex backends, exhausting account token quotas rapidly.
+
+### fix(dashboard): probe connection with natural test message and active opencode validation
+
+- Replace single-word probe strings (`ping`, `test`) across provider and node validators with a short natural message (`Hi there, how are you?`).
+- Run a live chat probe for `opencode` connections instead of automatically marking NoAuth providers valid, surfacing genuine quota and rate limit errors (such as `429 FreeUsageLimitError`) on the dashboard test button.
 
 ### Fixed — Provider detail identity stays left-aligned
 
 - Keep the provider icon, name, and connection count together on the left side of the provider detail header. The provider-wide toggle remains on the right.
 - Verified with `cd web && bun run build`, `make vet-svelte`, and a browser smoke check on the OpenCode Free detail page.
+
+### Combos: model response timeout and grace period
+
+- **Per-combo Model response timeout** (`comboStrategies[name].firstTokenTimeoutMs`,
+  disabled by default; edited in seconds in the combo Edit dialog or on the
+  combo card). Each candidate except the last is bounded from connection
+  selection through response headers to its first usable content, on
+  `/v1/chat/completions` and Messages/Responses combo routing, streaming and
+  non-streaming. A timed-out candidate is cancelled without cooling its provider
+  account, and the next candidate is tried. A stream that has started is never
+  cut off. Fusion panel timing is unchanged. Resolves #744.
+- **The last candidate keeps the gateway's normal deadline**, as specified in
+  #744 and the upstream proposal (decolua/9router#5214): the setting only
+  advances a combo, it never makes one fail sooner than it would without it.
+- **Replaces the #745 first-token timer.** #745 armed a second, streaming-only
+  timer on the same `firstTokenTimeoutMs` key; it is removed so one timeout
+  governs every endpoint and mode. The undocumented `firstTokenTimeout` alias
+  #745 also read is no longer parsed; the dashboard never wrote it.
+- **Grace period after a timeout** (`firstTokenGraceMs`, default 5 minutes, `0`
+  re-includes the model on the next request): a model that timed out is left out
+  of that combo's chain until the period ends. Held in memory, reset on restart;
+  if every member is benched the full chain is used.
+- **Committed in-band errors still fail over and lock the connection.** An
+  earlier revision returned as soon as the response was committed, which skipped
+  the lock and let the next request hit the same sick upstream.
+  `TestComboSkipsInbandErrorOnRetry` now runs with the timeout off and on.
+- Fixed detection of translated Messages text when an empty
+  `content_block_start` and a text delta arrive in one write.
+- Verified: `go test ./internal/db ./internal/proxy ./internal/handlers/chat`,
+  `go test -tags=integration ./internal/integration/...`, combo type tests,
+  `make vet-svelte`, and a live gateway smoke run against stalled and fast mock
+  upstreams.
 
 ### Fixed — `GET /v1/models` publishes the provider-node prefix
 
@@ -626,6 +1924,9 @@ pins the strip on an exact prefix match and the pass-through for
 unprefixed ids, foreign prefixes, a longer prefix sharing the same text,
 registry providers, and nodes without a registered prefix.
 
+### Features
+- **Combo First Token Timeout**: Added per-combo `firstTokenTimeoutMs` strategy setting (upstream `decolua/9router#5214` parity, resolving #744). When configured on a streaming combo, intermediate candidate attempts that fail to emit a content-bearing token within the deadline are cancelled and automatically fail over to the next candidate member, preventing stalled upstreams from holding connections.
+
 ### fix(chat): strip unservable legacy media from history before forwarding
 
 An image sent turns ago rides in the history of every later request, but the
@@ -669,6 +1970,9 @@ when upstream prompt caching was active and returning `cached_tokens`.
   prompt, cached, and reasoning token metrics.
 - Extended `ParseResponsesUsage` to recognize both `input_tokens_details` and
   `prompt_tokens_details` cached token envelopes.
+
+### Fixes
+- **Claude Passthrough**: Preserved blank-text `thinking` and `redacted_thinking` blocks on Claude native passthrough (upstream `decolua/9router#5233` parity, resolving #738). Prevents silent loss of reasoning context across multi-turn Claude Code sessions and ensures Anthropic thinking responses are recognized as contentful in zero-content checks.
 
 ### Fixes
 - **NVIDIA NIM**: Normalized assistant-message `reasoning` aliases to `reasoning_content` and removed `reasoning` before forwarding (upstream `decolua/9router#5247` parity, resolving #736), avoiding NIM's duplicate-field HTTP 400 error when clients send both.
