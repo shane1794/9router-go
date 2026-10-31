@@ -7,6 +7,12 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Upstream sync: luqman-v1/9router-go to f1eb955f (PR #3, merge 00f20381)
+
+- Merged 12 upstream commits since merge-base `38e29580` via PR #3, mergeable_state clean, 0 git conflicts, 70 files changed (5790 insertions, 716 deletions). Upstream head `f1eb955f` (#817 key-name validation + Windows test fixes, #815 arewedaks gap analysis, #813 oauth device slowdown backoff, #816 freebuff gzip recovery, #811 dashboard sidebar search/pins/icon rail, #814 tunnel Global tab). VERSION stays 1.9.15-exp.16. Fork-local files untouched (context tags, codebuddy header fix, provider filter, CHANGELOG.fork.md).
+- Note: `.changes/813` now has 2 fragments (fork model-context-tags, upstream oauth-device-slowdown-backoff) with different filenames, no git conflict, same pattern as the `.changes/790` triple from PR #1.
+- Verified before merge: `go build ./...` pass, web build pass, providers tests pass, web unit 682 pass (up from 658 with upstream's new sidebar/command-palette tests). No provider connections checked.
+
 ### Model context tags: show each model's max context where it is picked (port from serenhope/9router v0.5.117-Custom)
 
 - Ported "Every model shows its real window" from serenhope/9router
