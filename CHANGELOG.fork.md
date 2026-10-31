@@ -7,6 +7,10 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Fork-only: `make build` stops compiling the `opencode-go` copy (fragment 818)
+
+- Removed the second `go build` line from the `Makefile` `build` target, which compiled the same gateway package twice (as `9router-go` and as `opencode-go`). Verified in a clean worktree: `make build` produces only `9router-go` (version 1.9.15 embedded), no `opencode-go` file. No behaviour change: upstream CI/Docker/release build only `9router-go`, nothing invokes the `opencode-go` binary, and the `opencode-go` provider (ocg) is routed inside the gateway regardless of binary filename. Note: a stale `opencode-go` file from an older build is not removed by `make clean`; delete it once by hand (`del opencode-go.exe` on Windows).
+
 ### Upstream sync: luqman-v1/9router-go to v1.9.15 (1b73cafe, direct push 2523972b, PR #4 closed unmerged)
 
 - Synced 16 upstream commits since merge-base `f1eb955f` to release `v1.9.15` (head `1b73cafe`, 293 files upstream, VERSION exp.16 to 1.9.15). Trial merge conflicted in 2 files only; the other 88 merged cleanly. This sync did NOT go through a PR merge: cross-fork PR #4 was created via the browser but could not be resolved in GitHub's web editor, because that editor commits to the head branch (`luqman-v1:main`) which the fork owner cannot push to, so PR #4 was closed unmerged with an explanatory comment and the resolved tree was pushed directly to main (commit `2523972b`, 41 files).

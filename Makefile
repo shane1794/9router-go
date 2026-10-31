@@ -61,9 +61,16 @@ web-build:
 	@bun web/scripts/web-build.ts
 
 ## build — compile binary with version embedding
+# Fork-only: the upstream second line built an `opencode-go` copy of the
+# same executable (binaryName() answers to either name). It is not needed:
+# upstream CI, the Dockerfile and the release artifacts build only
+# `9router-go`, nothing invokes the `opencode-go` binary, and the
+# `opencode-go` *provider* (ocg) is routed inside the gateway regardless
+# of the binary filename, so dropping the copy changes no behaviour.
+# A stale `opencode-go` file from an older build is not removed by `clean`
+# (it only removes `$(BINARY_NAME)-*`); delete it once by hand.
 build: web-build
 	go build -ldflags="$(LDFLAGS)" -o $(BINARY_NAME) ./cmd/9router-go/
-	go build -ldflags="$(LDFLAGS)" -o opencode-go$(BINARY_SUFFIX) ./cmd/9router-go/
 
 # `PORT=20130 ./9router-go` is POSIX env-assignment prefix syntax. cmd.exe does
 # not parse it: it tried to execute a program literally named "PORT" and failed
