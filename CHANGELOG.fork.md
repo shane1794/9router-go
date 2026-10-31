@@ -7,6 +7,13 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Upstream sync: luqman-v1/9router-go to v1.9.15 (1b73cafe, direct push 2523972b, PR #4 closed unmerged)
+
+- Synced 16 upstream commits since merge-base `f1eb955f` to release `v1.9.15` (head `1b73cafe`, 293 files upstream, VERSION exp.16 to 1.9.15). Trial merge conflicted in 2 files only; the other 88 merged cleanly. This sync did NOT go through a PR merge: cross-fork PR #4 was created via the browser but could not be resolved in GitHub's web editor, because that editor commits to the head branch (`luqman-v1:main`) which the fork owner cannot push to, so PR #4 was closed unmerged with an explanatory comment and the resolved tree was pushed directly to main (commit `2523972b`, 41 files).
+- Conflict resolutions: `CHANGELOG.md` taken wholesale from upstream (fork history lives in this file, not upstream's); `codebuddy.go` combined the fork's fresh-per-request conversation ids (3fd925a port) with upstream's CN CLI identity (2.133.1, `#3257`), dropping upstream's session-pinned derivation whose helpers were already removed as dead code by the fork fix.
+- Known divergences from a full merge, documented for the next sync: 45 upstream-deleted `.changes/` fragments were NOT deleted here (snapshot push cannot delete), so the dashboard changelog will show those entries twice until the next sync deletes them; 4 upstream screenshot assets (1 PNG + 3 WebP, docs only, not referenced by the dashboard) were NOT pushed (snapshot push is UTF-8 only). Fork fragment `.changes/813-model-context-tags.md` survives.
+- Verified before push: `go build ./...` pass, `go vet` on executor pass, codebuddy tests pass (fork fresh-per-request + session-not-pinned, upstream CN version + identity + telemetry), providers tests pass, web build pass, web unit 689 pass. No provider connections checked.
+
 ### Upstream sync: luqman-v1/9router-go to f1eb955f (PR #3, merge 00f20381)
 
 - Merged 12 upstream commits since merge-base `38e29580` via PR #3, mergeable_state clean, 0 git conflicts, 70 files changed (5790 insertions, 716 deletions). Upstream head `f1eb955f` (#817 key-name validation + Windows test fixes, #815 arewedaks gap analysis, #813 oauth device slowdown backoff, #816 freebuff gzip recovery, #811 dashboard sidebar search/pins/icon rail, #814 tunnel Global tab). VERSION stays 1.9.15-exp.16. Fork-local files untouched (context tags, codebuddy header fix, provider filter, CHANGELOG.fork.md).
