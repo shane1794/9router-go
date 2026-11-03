@@ -56,6 +56,10 @@ func (h *ChatHandler) forwardRequest(
 	if httpClient == nil {
 		httpClient = h.Client
 	}
+	// SenseNova exposes reasoning in responses but rejects reasoning carriers
+	// when assistant history is replayed. This also covers custom provider nodes
+	// whose generated provider id does not identify the upstream service.
+	body = executor.StripSenseNovaReasoning(body, cfg.BaseURL)
 	// OpenAI-compat Gemini endpoints validate tool schemas as strictly as the
 	// native one — sanitize tools so no unsupported JSON-Schema keyword reaches
 	// them ("Invalid tool parameters" fix).
