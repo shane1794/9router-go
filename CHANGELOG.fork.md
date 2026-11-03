@@ -7,6 +7,10 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Docs: HANDOFF.md converted to English only (2026-11-03)
+
+- Removed all Javanese/Indonesian wording from `HANDOFF.md` (owner line, provider-check standing instruction quote, dropped-thread quotes, language-mirroring line), replacing each with an English equivalent with the same meaning. `GOAL.md` and `AGENTS.md` were checked and were already English only, so they were not changed in this commit. Note: this commit was based on main `a7d36edf`; the state sections of `HANDOFF.md` (fork `ab5bb7ba`, upstream `4249283b` pending) predate that sync and are superseded by it, see the trial-sync entry below.
+
 ### Trial local sync: luqman-v1/9router-go to d6dd9481 (2026-11-03)
 
 - Synced the 24 upstream commits after the previous fork sync at `ae4b4149`, through `d6dd9481` (#895). The local trial merge includes the upstream provider-registry/catalog refactor, resilience admission control, service-tier routing, media/MCP proxy-pool routing, HCNSec, OAuth context propagation, tool-argument healing, success-rate analytics, and Gemini embedding dimensions.

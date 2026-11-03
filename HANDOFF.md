@@ -9,9 +9,8 @@ For the next agent picking up this project. Read this file first, then
 Do not reconstruct history from GitHub search alone: search hides forks
 by default, and snapshot pushes do not preserve local git history.
 
-Written: 2026-11-03. Owner: Arthur (Malang area, Boso Jowo / casual
-Indonesian in chat). Previous session: side chat "Continue 9router-go
-fork and fixes".
+Written: 2026-11-03. Owner: Arthur. Previous session: side chat
+"Continue 9router-go fork and fixes".
 
 ## 1. Project identity
 
@@ -61,9 +60,8 @@ fork and fixes".
   approval cards, and do NOT work around it through another route
   (browser, PR, etc.) unless he explicitly asks to try again.
 - NEVER check or test a provider connection in 9router unless he
-  explicitly asks ("ga usah ngecek i koneksi tiap provider ndek
-  9router kecuali tak kongkon", 2026-10-30). Build and unit tests
-  are fine; live provider checks are not.
+  explicitly asks (standing instruction, 2026-10-30). Build and unit
+  tests are fine; live provider checks are not.
 - Secrets: never ask for, accept in chat, store, or repeat a token,
   API key, or GitHub password. Tokens are entered on his own machine
   only. Never run `gh auth login`, device auth, or embed credentials
@@ -312,9 +310,9 @@ assume they happened.
   luqman-v1/9router-go, now blocked on "no server capacity".
   Any retry needs a FRESH API key from him first. Do not rebuild,
   re-offer, or pitch it unprompted.
-- Laptop via Tailscale for the gateway: dropped 2026-10-30
-  ("yowes ga sido"). Do not revive or pitch.
-- SSH-to-WSL plan: dropped 2026-10-30 ("lupakan wsl").
+- Laptop via Tailscale for the gateway: dropped 2026-10-30.
+  Do not revive or pitch.
+- SSH-to-WSL plan: dropped 2026-10-30.
   Do not revive. Tailscale enrollment itself stays as is.
 - Adobe Stock videos, Honeygain, and the original muse.ai Threads
   promo closure: dropped threads, not this project, but the rule
@@ -337,7 +335,7 @@ assume they happened.
 - SANITY always on since 2026-11-01: verify claims against their
   source, label CONFIRMED / INFERRED / UNCERTAIN / UNKNOWN where
   it matters, do not present a full score dump on a casual reply.
-- Mirror the language he is using (Boso Jowo when he is in it).
+- Mirror the language he is using in the current conversation.
   He crosschecks rather than agrees: when he challenges a claim,
   open the source and answer from it, and concede immediately
   when his evidence wins.
