@@ -9,8 +9,9 @@ For the next agent picking up this project. Read this file first, then
 Do not reconstruct history from GitHub search alone: search hides forks
 by default, and snapshot pushes do not preserve local git history.
 
-Written: 2026-11-03. Owner: Arthur. Previous session: side chat
-"Continue 9router-go fork and fixes".
+Written: 2026-11-03. Updated: 2026-11-03 evening, state to the
+`a7d36edf` / `d6dd9481` sync. Owner: Arthur. Previous session:
+side chat "Continue 9router-go fork and fixes".
 
 ## 1. Project identity
 
@@ -25,25 +26,43 @@ Written: 2026-11-03. Owner: Arthur. Previous session: side chat
   engineering guide; section 7.6 is the one that matters most for
   fork work (see section 5 below).
 
-## 2. Current state (verified 2026-11-03)
+## 2. Current state (verified 2026-11-03 evening)
 
-- Fork `main`: `ab5bb7ba` (snapshot push, 2026-11-01).
-- Last upstream sync landed: `1.9.16-exp.1`, upstream head
-  `ae4b4149` (15 genuinely new commits since v1.9.15).
+- Fork `main` before this docs update: `4cf983a2` (English-only
+  HANDOFF push, on top of the sync below).
+- Last upstream sync landed: merge commit `a7d36edf`
+  (Merge: `db10c25e` + `d6dd9481`, 2026-11-03), syncing 24 upstream
+  commits after `ae4b4149` through `d6dd9481` (#895, Gemini
+  embedding dimensions). Its scope, per its `CHANGELOG.fork.md`
+  entry: provider-registry/catalog refactor, resilience admission
+  control, service-tier routing, media/MCP proxy-pool routing,
+  HCNSec, OAuth context propagation, tool-argument healing,
+  success-rate analytics, and Gemini embedding dimensions, with
+  11 conflict areas resolved while preserving fork behaviour
+  (CodeBuddy fresh ids plus upstream CK API-key handling, fork
+  `invalid_grant` parking, model context tags, fork-only build
+  history). Note: that entry calls itself a local trial merge
+  only, but the merge itself IS on `main`, so that wording is
+  superseded.
 - `VERSION` and `internal/updater/updater.go` `CurrentVersion`:
-  `1.9.16-exp.1`.
-- Upstream `main` NOW: `4249283b` (fix translator regex lookarounds,
-  #886, plus at least 9 more commits on top of `ae4b4149`, including
-  #885 tray, #884 ImgBot image optimisation, #870 proxy-pool,
-  #860 service tiers, #858 retry budget, #854 HCNSec provider).
-  The fork is behind upstream again. The next sync has NOT been
-  started. Do not claim the fork is up to date.
-- Counting trap: a naive `git rev-list HEAD..upstream/main` overcounts.
-  Previous syncs landed as snapshot commits, not merges, so the git
-  merge-base is still `f1eb955f` (the PR #3 sync point). The 15-commit
-  figure for the last sync was counted from `1b73cafe`, not from the
-  merge-base. Always count genuinely new commits from the last synced
-  upstream head, and confirm with a trial merge.
+  `1.9.16-exp.1` (unchanged by the `d6dd9481` sync; it was not a
+  release bump).
+- Upstream `main` NOW: `d6dd9481`, exactly the fork's sync point.
+  `git merge-base` of fork `main` against upstream is
+  `d6dd9481` itself, and `rev-list` fork-vs-upstream is 0. The
+  fork is up to date with upstream as of this writing. The next
+  sync is only for upstream commits that land AFTER `d6dd9481`.
+- Counting trap, now resolved: syncs before `a7d36edf` landed as
+  snapshot commits, not merges, so the git merge-base was stuck
+  at `f1eb955f` (the PR #3 sync point) and a naive `rev-list`
+  overcounted (the 15-commit figure for the `ae4b4149` sync was
+  counted from `1b73cafe`, not from the merge-base). Because
+  `a7d36edf` is a real merge, that trap no longer applies to
+  future syncs: count from `d6dd9481` and confirm with a trial
+  merge as usual.
+- Docs history: `db10c25e` published `GOAL.md` + `HANDOFF.md` to
+  the repo root; `4cf983a2` converted `HANDOFF.md` to English
+  only (`GOAL.md` and `AGENTS.md` were already English).
 
 ## 3. The standing job (Arthur-confirmed 2026-10-30)
 
@@ -210,18 +229,20 @@ them is a broken sync, even if it builds.
   for the last sync (commit `ab5bb7ba`, 107 paths). The record
   can reveal other repos' targets, paths, and SHAs; it is excluded
   from every manifest.
-- Known divergences carried forward (same in both last syncs):
-  45 upstream-deleted `.changes/` fragments were NOT deleted on
-  fork `main`, so the dashboard changelog shows those entries
-  twice. No code files were deleted by either merge. The next
-  sync will show the same 45 deletions in its trial merge again
-  until a real (non-snapshot) push deletes them. In the
-  v1.9.16-exp.1 sync, 8 binary PNG/WebP docs assets were also not
-  pushed (1 request-details screenshot, 4 evidence PNGs for #829,
-  3 WebP screenshots); the v1.9.15 sync left 4 similar assets
-  behind. The new upstream head also contains an ImgBot image
-  optimisation commit (#884), so expect more binary assets in the
-  next sync and handle them the same way.
+- Known divergences, now resolved by the real merge: the 45
+  upstream-deleted `.changes/` fragments that snapshot pushes
+  could NOT delete (and that made the dashboard changelog show
+  those entries twice) were deleted by merge `a7d36edf`
+  (`.changes/` count 65 down to 51; old fragments 739/745/750
+  are gone, new fragments 848/861/895 are present). No code
+  files were deleted by the snapshot-era merges. Binary assets
+  remain a snapshot-push limit: the v1.9.16-exp.1 sync did not
+  push 8 binary PNG/WebP docs assets (1 request-details
+  screenshot, 4 evidence PNGs for #829, 3 WebP screenshots);
+  the v1.9.15 sync left 4 similar assets behind. The `d6dd9481`
+  sync includes an ImgBot image optimisation commit (#884), so
+  expect binary assets in future syncs and handle them the same
+  way (omit with Arthur's agreement, docs only).
 
 ## 9. Verification baseline and pre-existing failures
 
@@ -276,7 +297,9 @@ These were pending at handoff time. Verify them fresh; do not
 assume they happened.
 
 1. On his machine (Windows) and/or VPS: `git pull origin main`
-   to `ab5bb7ba`, then `make build`, then stop/start the gateway.
+   (latest, at least `a7d36edf`; a docs push after this handoff
+   will move the head again, so pull by branch, not by SHA),
+   then `make build`, then stop/start the gateway.
    Confirm `9router-go` (version 1.9.16-exp.1 embedded) runs and
    `opencode-go` does not reappear (delete the stale file once
    by hand, section 6).
@@ -347,15 +370,18 @@ assume they happened.
 
 ## 14. Next actions for the incoming agent
 
-1. Confirm with Arthur whether the next job is the upstream sync
-   to `4249283b` (section 2), or a specific fix he will name.
-   Do not start the sync unprompted: the last two syncs both
-   needed his explicit go, and the push needs it again.
-2. If it is the sync, follow section 7 exactly, starting from a
-   fresh clone, and expect the same 45 `.changes/` deletions to
-   reappear in the trial merge plus any new binary assets from
-   #884 and friends.
-3. Ask Arthur for the section 11 confirmations (pull to
-   `ab5bb7ba`, `make build`, gateway restart) only if he has
+1. Confirm with Arthur whether the next job is a future upstream
+   sync (only for commits after `d6dd9481`, section 2), or a
+   specific fix he will name. Do not start a sync unprompted:
+   syncs need his explicit go, and the push needs it again.
+   A real merge is now possible (see `a7d36edf`); a snapshot
+   push is still the fallback for docs-only changes, with its
+   limits in section 8.
+2. If it is a sync, follow section 7 exactly, starting from a
+   fresh clone. The 45 `.changes/` deletions are gone (section
+   8); watch instead for new binary assets in future upstream
+   commits.
+3. Ask Arthur for the section 11 confirmations (pull latest
+   `main`, `make build`, gateway restart) only if he has
    not already confirmed them in another chat; check that chat
    first before asking him to repeat himself.

@@ -7,6 +7,10 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Docs: update GOAL.md and HANDOFF.md state to the a7d36edf / d6dd9481 sync (2026-11-03)
+
+- Updated the state sections of `GOAL.md` and `HANDOFF.md` from the superseded picture (fork `ab5bb7ba`, upstream `4249283b` pending) to the actual state: merge `a7d36edf` synced upstream through `d6dd9481` (#895, 24 commits after `ae4b4149`), upstream head is `d6dd9481`, so the fork is up to date and the next sync covers only commits after `d6dd9481`; VERSION stays `1.9.16-exp.1`. Also recorded that the real merge resolved the snapshot-era divergences: the 45 old `.changes/` fragments are deleted (count 65 down to 51) and the git merge-base is now `d6dd9481` itself, so the old merge-base counting trap no longer applies. No code changed in this commit.
+
 ### Docs: HANDOFF.md converted to English only (2026-11-03)
 
 - Removed all Javanese/Indonesian wording from `HANDOFF.md` (owner line, provider-check standing instruction quote, dropped-thread quotes, language-mirroring line), replacing each with an English equivalent with the same meaning. `GOAL.md` and `AGENTS.md` were checked and were already English only, so they were not changed in this commit. Note: this commit was based on main `a7d36edf`; the state sections of `HANDOFF.md` (fork `ab5bb7ba`, upstream `4249283b` pending) predate that sync and are superseded by it, see the trial-sync entry below.
