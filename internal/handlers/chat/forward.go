@@ -64,17 +64,16 @@ func (h *ChatHandler) forwardRequest(
 			body = sanitized
 		}
 	}
-	// OpenRouter strict pattern validation (PR #3665): strip malformed regex patterns
-	if strings.Contains(cfg.BaseURL, "openrouter.ai") {
-		var bodyMap map[string]any
-		if err := json.Unmarshal(body, &bodyMap); err == nil {
-			if tools, ok := bodyMap["tools"].([]any); ok && len(tools) > 0 {
-				if normalized, removed := translator.NormalizeToolSchemasForProvider("openrouter", tools); removed > 0 {
-					bodyMap["tools"] = normalized
-					log.Debug("tool_schema", "openrouter stripped invalid patterns", "removed", removed)
-					if newBody, err := json.Marshal(bodyMap); err == nil {
-						body = newBody
-					}
+	// Strict pattern validation: strip regex lookarounds and malformed patterns
+	// that OpenAI, DeepSeek, and strict JSON Schema validators reject with HTTP 400.
+	var bodyMap map[string]any
+	if err := json.Unmarshal(body, &bodyMap); err == nil {
+		if tools, ok := bodyMap["tools"].([]any); ok && len(tools) > 0 {
+			if normalized, removed := translator.NormalizeToolSchemasForProvider(provider, tools); removed > 0 {
+				bodyMap["tools"] = normalized
+				log.Debug("tool_schema", "stripped invalid patterns", "provider", provider, "removed", removed)
+				if newBody, err := json.Marshal(bodyMap); err == nil {
+					body = newBody
 				}
 			}
 		}
@@ -87,10 +86,32 @@ func (h *ChatHandler) forwardRequest(
 	if provider == "deepseek" {
 		body = executor.DowngradeJsonSchemaToJSONObject(body)
 	}
+	// Provider-level admission control. The breaker answers "is this provider
+	// healthy at all?" and the semaphore "may THIS account take another
+	// concurrent request?" — one dead provider must stop every account's
+	// traffic to it, and one busy account must not throttle the others. Both
+	// are consulted here, at the single point every OpenAI-compatible lane
+	// goes through, so no lane can quietly bypass them.
+	release, allowed := h.resilienceAdmit(ctx, provider, cfg)
+	if !allowed {
+		return &upstreamError{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       []byte(`{"error":{"message":"provider temporarily unavailable","type":"server_error"}}`),
+		}
+	}
 	resp, err := internalproxy.ForwardOpenAI(ctx, httpClient, cfg, apiKey, body, isStream)
 	if err != nil {
+		// A transport failure never produced a status, which counts for the
+		// breaker exactly as a 503 does: the provider did not answer.
+		release()
+		h.resilienceReport(provider, cfg, 0)
 		return fmt.Errorf("forward to upstream: %w", err)
 	}
+	// The status is the provider's verdict, so report it before the error is
+	// translated — only provider-level failures may charge the breaker, and a
+	// 401 or 429 says something about the account rather than the provider.
+	h.resilienceReport(provider, cfg, resp.StatusCode)
+	release()
 
 	var bodyCloser io.Closer = resp.Body
 	defer func() {

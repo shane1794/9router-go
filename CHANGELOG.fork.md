@@ -7,6 +7,12 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Trial local sync: luqman-v1/9router-go to d6dd9481 (2026-11-03)
+
+- Synced the 24 upstream commits after the previous fork sync at `ae4b4149`, through `d6dd9481` (#895). The local trial merge includes the upstream provider-registry/catalog refactor, resilience admission control, service-tier routing, media/MCP proxy-pool routing, HCNSec, OAuth context propagation, tool-argument healing, success-rate analytics, and Gemini embedding dimensions.
+- Resolved 11 conflict areas while preserving fork behavior: CodeBuddy fresh per-request conversation IDs plus upstream CK API-key handling, the fork's `invalid_grant` OAuth parking behavior, model context tags, and fork-only build history. Upstream's dynamic provider catalog, translator sanitization, GLM context propagation, anomaly panel, and provider admission control were retained.
+- Verification so far: executor, translator, providers, and OAuth package tests pass. Chat tests run through the existing pre-sync failure `TestRejectedOAuthRefreshParksAccount/expiry_refresh/spent_token_is_parked`, caused by the pre-existing refresh-slot test state not being reset between subtests. No provider connections were checked. This is a local trial merge only; nothing was pushed.
+
 ### Docs: publish GOAL.md and HANDOFF.md to the repo root (2026-11-03)
 
 - Added `GOAL.md` (fork maintenance goal, updated from the stale 1.9.15-exp.15 / Tailscale-route wording to the current state: last sync 1.9.16-exp.1 at `ab5bb7ba`, upstream ahead again at `4249283b`, next sync pending) and `HANDOFF.md` (full handover for another agent: job definition, hard rules, fork changes to preserve, sync procedure, snapshot-push limits, pending VPS items) at the repo root, so an agent that only clones the repo can find them. Previously both files lived only in Muse's goal workspace, not in the repo. The goal-folder copies remain the working copies for Muse agents; the repo copies are published from them.
