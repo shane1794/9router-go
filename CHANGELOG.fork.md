@@ -7,6 +7,10 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Docs: publish GOAL.md and HANDOFF.md to the repo root (2026-11-03)
+
+- Added `GOAL.md` (fork maintenance goal, updated from the stale 1.9.15-exp.15 / Tailscale-route wording to the current state: last sync 1.9.16-exp.1 at `ab5bb7ba`, upstream ahead again at `4249283b`, next sync pending) and `HANDOFF.md` (full handover for another agent: job definition, hard rules, fork changes to preserve, sync procedure, snapshot-push limits, pending VPS items) at the repo root, so an agent that only clones the repo can find them. Previously both files lived only in Muse's goal workspace, not in the repo. The goal-folder copies remain the working copies for Muse agents; the repo copies are published from them.
+
 ### Upstream sync: luqman-v1/9router-go to 1.9.16-exp.1 (ae4b4149, trial merge 2026-11-01)
 
 - Synced 15 genuinely new upstream commits since v1.9.15 (`1b73cafe`): `ae4b4149` ZCode Start/Weekend plan lane (#861), `a832c429` Tier 1 gap ports (#848), `36e4e32a` claude-cloaking fix (#850), `302f4e16` stream empty tool-call deltas (#847), `dd17af20` stall watchdog (#821), `636acdf7` combo reasoning streams (#845), `1e63` cache TTL (#839), `0ea93715` bump to 1.9.16-exp.1 (#843), `2e8a217e` tokenmaxxing combos (#786), `332bbbdb` bedrock reasoning (#831), `8fbd94f0` translator json_schema (#824), `7208370b` tool-arg auto-heal (#837), `0e02` strip n param (#836), `70530a3f` API key search/filter (#829), `2019d085` commandcode reasoning inject (#833). VERSION and `CurrentVersion` move 1.9.15 to 1.9.16-exp.1. Note: the git trial merge is measured against merge-base `f1eb955f` (159 files) because the previous v1.9.15 sync landed as a snapshot commit, not a merge, so that count re-applies the 16 already-synced commits.
