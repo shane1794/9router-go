@@ -7,6 +7,10 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Docs: update GOAL.md and HANDOFF.md state to the a239df34 sync and Nous port (2026-11-04)
+
+- Updated the state sections of `GOAL.md` and `HANDOFF.md` from the superseded picture (fork up to date at `d6dd9481`, VERSION 1.9.16-exp.1) to the actual state: upstream synced through `a239df34` (12 commits after `d6dd9481`, snapshot push `68372337`, VERSION 1.9.16-exp.2), serenhope Nous seed models ported (push `d1cdeb7c`, Nous catalogue now 10 models), upstream head is `a239df34`, and the next sync covers only commits after `a239df34`. Also recorded that the Nov 04 snapshot pushes brought back the merge-base counting trap: the git merge-base is `d6dd9481` again, so a naive rev-list reports 12 already-synced commits; future syncs must count from `a239df34`. No code changed in this commit.
+
 ### Port: Nous seed models from serenhope/9router (2026-11-04)
 
 - Restored 3 serenhope seed models to the fork's Nous static catalogue (`registry_models.go`) and capabilities (`capabilities.go`), verbatim from serenhope `open-sse/providers/registry/nous.js` and `capabilities.js`: `meituan/longcat-2.5-preview:free`, `stepfun/step-5-preview:free`, and `stealth/missingno`, all with tools, reasoning and the `nous` thinking format, so the Nous thinking dialect now applies to them too. The newer beam/ornith rows are kept. Tests updated in the same change (`nous_test.go` capabilities table, `aggregators_test.go` catalogue list); the thinking-levels fixture (v0.5.109) already listed all 8 serenhope models with base levels, so the now-obsolete pending-divergence entry for the two previously dropped models was removed from `thinking_levels_fixture_test.go`. Verified: `go test ./internal/providers/` passes; `go test ./internal/handlers/chat/` has exactly one failure, the pre-existing `TestRejectedOAuthRefreshParksAccount/expiry_refresh/spent_token_is_parked` (refresh-slot test state not reset between subtests, already noted in the `a7d36edf` sync baseline, unrelated to Nous). No provider connections were checked or tested.

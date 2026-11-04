@@ -9,9 +9,10 @@ For the next agent picking up this project. Read this file first, then
 Do not reconstruct history from GitHub search alone: search hides forks
 by default, and snapshot pushes do not preserve local git history.
 
-Written: 2026-11-03. Updated: 2026-11-03 evening, state to the
-`a7d36edf` / `d6dd9481` sync. Owner: Arthur. Previous session:
-side chat "Continue 9router-go fork and fixes".
+Written: 2026-11-03. Updated: 2026-11-04, state to the
+`a239df34` sync and the serenhope Nous port. Owner: Arthur.
+Previous session: side chat "Continue 9router-go fork and
+fixes".
 
 ## 1. Project identity
 
@@ -26,43 +27,58 @@ side chat "Continue 9router-go fork and fixes".
   engineering guide; section 7.6 is the one that matters most for
   fork work (see section 5 below).
 
-## 2. Current state (verified 2026-11-03 evening)
+## 2. Current state (verified 2026-11-04)
 
-- Fork `main` before this docs update: `4cf983a2` (English-only
-  HANDOFF push, on top of the sync below).
-- Last upstream sync landed: merge commit `a7d36edf`
-  (Merge: `db10c25e` + `d6dd9481`, 2026-11-03), syncing 24 upstream
-  commits after `ae4b4149` through `d6dd9481` (#895, Gemini
-  embedding dimensions). Its scope, per its `CHANGELOG.fork.md`
-  entry: provider-registry/catalog refactor, resilience admission
-  control, service-tier routing, media/MCP proxy-pool routing,
-  HCNSec, OAuth context propagation, tool-argument healing,
-  success-rate analytics, and Gemini embedding dimensions, with
-  11 conflict areas resolved while preserving fork behaviour
-  (CodeBuddy fresh ids plus upstream CK API-key handling, fork
-  `invalid_grant` parking, model context tags, fork-only build
-  history). Note: that entry calls itself a local trial merge
-  only, but the merge itself IS on `main`, so that wording is
-  superseded.
+- Fork `main` before this docs update: `d1cdeb7c` (serenhope
+  Nous port push, on top of the sync below).
+- Last upstream sync landed: snapshot push `68372337`
+  (2026-11-04, based on `e5c9013c`), syncing 12 upstream
+  commits after `d6dd9481` through `a239df34` (#938, SSE
+  delta.reasoning test, plus #863/#879 dashboard mobile wrap,
+  #865 cloudflare-ai accountId, #894 codex namespace tools,
+  #898 chat default stream false, #900/#904 claude
+  thinking/whitespace, #905 commandcode conversation-stable
+  session identity, #896 cloudflare FLUX size, #921
+  loop-detection false positive, #922 gemini timeout
+  failover, and the 1.9.16-exp.2 version bump). Trial merge
+  was clean with 0 git conflicts, 41 files, no deletions
+  and no binary files. Fork behaviour preserved: CodeBuddy
+  fresh ids, fork-only `make build` (only `9router-go`),
+  model context tags, and the nous `invalid_grant` parking
+  fix.
+- Nous port landed right after the sync: snapshot push
+  `d1cdeb7c` (2026-11-04), restoring 3 serenhope seed
+  models verbatim from serenhope `open-sse/providers/registry/nous.js`
+  and `capabilities.js` (2026-10-15) to the fork's static
+  catalogue and capabilities: `meituan/longcat-2.5-preview:free`,
+  `stepfun/step-5-preview:free`, and `stealth/missingno`,
+  all with tools, reasoning and the `nous` thinking format.
+  The Nous catalogue now holds 10 models (the 3 restored
+  plus the 7 already present, including beam/ornith). The
+  rest of the Nous provider (OAuth, refresh, attribution,
+  thinking, free-model normalizer) was already in the fork
+  and is unchanged.
 - `VERSION` and `internal/updater/updater.go` `CurrentVersion`:
-  `1.9.16-exp.1` (unchanged by the `d6dd9481` sync; it was not a
-  release bump).
-- Upstream `main` NOW: `d6dd9481`, exactly the fork's sync point.
-  `git merge-base` of fork `main` against upstream is
-  `d6dd9481` itself, and `rev-list` fork-vs-upstream is 0. The
-  fork is up to date with upstream as of this writing. The next
-  sync is only for upstream commits that land AFTER `d6dd9481`.
-- Counting trap, now resolved: syncs before `a7d36edf` landed as
-  snapshot commits, not merges, so the git merge-base was stuck
-  at `f1eb955f` (the PR #3 sync point) and a naive `rev-list`
-  overcounted (the 15-commit figure for the `ae4b4149` sync was
-  counted from `1b73cafe`, not from the merge-base). Because
-  `a7d36edf` is a real merge, that trap no longer applies to
-  future syncs: count from `d6dd9481` and confirm with a trial
-  merge as usual.
+  `1.9.16-exp.2`.
+- Upstream `main` NOW: `a239df34`, exactly the fork's sync
+  point, so the fork's content is up to date with upstream
+  as of this writing. The next sync is only for upstream
+  commits that land AFTER `a239df34`.
+- Counting trap, back again: the Nov 04 pushes were
+  snapshots, not real merges, so the git merge-base is
+  back to `d6dd9481` (the `a7d36edf` real merge's point)
+  and a naive `rev-list` fork-vs-upstream reports 12
+  commits that are already in the fork's content. Always
+  count genuinely new commits from the last synced
+  upstream head (`a239df34`), and confirm with a trial
+  merge. The trap was briefly resolved by the `a7d36edf`
+  real merge and returned as soon as snapshot pushes
+  resumed.
 - Docs history: `db10c25e` published `GOAL.md` + `HANDOFF.md` to
   the repo root; `4cf983a2` converted `HANDOFF.md` to English
-  only (`GOAL.md` and `AGENTS.md` were already English).
+  only (`GOAL.md` and `AGENTS.md` were already English);
+  `f20eac32` updated both docs to the `a7d36edf` /
+  `d6dd9481` state.
 
 ## 3. The standing job (Arthur-confirmed 2026-10-30)
 
@@ -297,10 +313,10 @@ These were pending at handoff time. Verify them fresh; do not
 assume they happened.
 
 1. On his machine (Windows) and/or VPS: `git pull origin main`
-   (latest, at least `a7d36edf`; a docs push after this handoff
+   (latest, at least `d1cdeb7c`; a docs push after this handoff
    will move the head again, so pull by branch, not by SHA),
    then `make build`, then stop/start the gateway.
-   Confirm `9router-go` (version 1.9.16-exp.1 embedded) runs and
+   Confirm `9router-go` (version 1.9.16-exp.2 embedded) runs and
    `opencode-go` does not reappear (delete the stale file once
    by hand, section 6).
 2. VPS gateway restart, port 20130: the last known blocker was a
@@ -371,16 +387,18 @@ assume they happened.
 ## 14. Next actions for the incoming agent
 
 1. Confirm with Arthur whether the next job is a future upstream
-   sync (only for commits after `d6dd9481`, section 2), or a
+   sync (only for commits after `a239df34`, section 2), or a
    specific fix he will name. Do not start a sync unprompted:
    syncs need his explicit go, and the push needs it again.
-   A real merge is now possible (see `a7d36edf`); a snapshot
-   push is still the fallback for docs-only changes, with its
-   limits in section 8.
+   A real merge is possible (see `a7d36edf`); snapshot pushes
+   remain the working route here, with their limits in
+   section 8, and they bring back the merge-base counting
+   trap described in section 2.
 2. If it is a sync, follow section 7 exactly, starting from a
    fresh clone. The 45 `.changes/` deletions are gone (section
    8); watch instead for new binary assets in future upstream
-   commits.
+   commits, and count new commits from `a239df34`, never
+   from the merge-base.
 3. Ask Arthur for the section 11 confirmations (pull latest
    `main`, `make build`, gateway restart) only if he has
    not already confirmed them in another chat; check that chat
