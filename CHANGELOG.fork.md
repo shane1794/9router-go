@@ -7,6 +7,10 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Upstream sync to a239df34 (2026-11-04)
+
+- Synced upstream luqman-v1/9router-go through `a239df34` (12 commits after `d6dd9481`: #863/#879 dashboard mobile wrap, #865 cloudflare-ai accountId, #894 codex namespace tools, #898 chat default stream false, #900/#904 claude thinking/whitespace, #905 commandcode conversation-stable session identity, #896 cloudflare FLUX size, #921 loop-detection false positive, #922 gemini timeout failover, #938 SSE delta.reasoning test, plus the 1.9.16-exp.2 version bump). Trial merge was clean with 0 git conflicts, 41 files, no deletions and no binary files. Fork behaviour preserved: CodeBuddy fresh request/conversation ids, fork-only `make build` (only `9router-go`), model context tags, and the nous `invalid_grant` parking fix. VERSION is now 1.9.16-exp.2. Verified: `make build` passes (only `9router-go`, version embedded), `go test ./internal/proxy/` passes, web unit 768 pass (previous tree; #938 adds only a stream-peeker test case, re-verified in `./internal/proxy/`). Known pre-existing failure, unchanged: executor `TestForwardQoder_UnknownModelNamesTheModel` (VM egress proxy TLS). No provider connections were checked or tested.
+
 ### SenseNova strict reasoning history (2026-11-04)
 
 - Strip replayed `reasoning_content`, `reasoning`, and `reasoning_details` fields from assistant history sent to SenseNova's strict Chat Completions endpoints, including custom nodes targeting `token.sensenova.ai` or `token.sensenova.cn`. This fixes the generic `400 inference request is invalid` on affected multi-turn requests while preserving content and leaving other providers unchanged. Verified with `go test ./internal/proxy/executor`.
