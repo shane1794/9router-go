@@ -1,0 +1,3 @@
+### Providers
+
+- **nous**: Restore the serenhope/9router seed models to the static catalogue and capabilities: `meituan/longcat-2.5-preview:free` (vision, 1048576 context, 131072 max output), `stepfun/step-5-preview:free` (vision + video input, 1000000 context, 64000 max output), and `stealth/missingno` (262144 context, 131072 max output), all with tools, reasoning and the `nous` thinking format. Values are verbatim from serenhope `open-sse/providers/registry/nous.js` and `capabilities.js`. The rest of the Nous provider (OAuth device code + agent-key mint, token refresh, attribution, thinking format, free-model normalizer) was already present in the fork and is unchanged.

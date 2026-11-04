@@ -84,11 +84,14 @@ func TestNousCapabilities(t *testing.T) {
 		maxOutput     int
 		vision, video bool
 	}{
-		"meituan/longcat-2.0:free":         {1048756, 262144, false, false},
-		"upstage/solar-mini4:free":         {524288, 131072, false, false},
-		"stepfun/step-3.7-flash:free":      {262144, 256000, true, true},
-		"poolside/laguna-s-2.1:free":       {262144, 131072, false, false},
-		"poolside/laguna-xs-2.1:free":      {262144, 32768, false, false},
+		"meituan/longcat-2.0:free":           {1048756, 262144, false, false},
+		"meituan/longcat-2.5-preview:free":   {1048576, 131072, true, false},
+		"stepfun/step-5-preview:free":        {1000000, 64000, true, true},
+		"upstage/solar-mini4:free":           {524288, 131072, false, false},
+		"stepfun/step-3.7-flash:free":        {262144, 256000, true, true},
+		"poolside/laguna-s-2.1:free":         {262144, 131072, false, false},
+		"poolside/laguna-xs-2.1:free":        {262144, 32768, false, false},
+		"stealth/missingno":                  {262144, 131072, false, false},
 		"reflection/beam-1.0-501b-a23b:free": {262144, 131072, false, false},
 		"ornith/ornith-1.5-122b:free":        {262144, 262144, true, false},
 	}
