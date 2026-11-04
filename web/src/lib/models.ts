@@ -4675,6 +4675,16 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "id": "typesafe/jev-1.13",
       "name": "Jev 1.13",
       "kind": "systemone"
+    },
+    {
+      "id": "typesafe/jev-1.14",
+      "name": "Jev 1.14",
+      "kind": "systemone"
+    },
+    {
+      "id": "typesafe/jev-latest",
+      "name": "Jev Latest",
+      "kind": "systemone"
     }
   ],
   "perplexity-web": [

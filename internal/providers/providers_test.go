@@ -226,6 +226,8 @@ func TestGetProviderModelKind(t *testing.T) {
 		{provider: "antigravity", model: "gemini-3.8-flash-high", want: ""},
 		{provider: "openrouter", model: "openai/tts-1", want: "tts"},
 		{provider: "openrouter", model: "google/veo-3.1", want: "video"},
+		{provider: "openrouter", model: "typesafe/jev-1.14", want: "systemone"},
+		{provider: "openrouter", model: "typesafe/jev-latest", want: "systemone"},
 		{provider: "unknown-provider", model: "whatever", want: ""},
 		{provider: "nvidia", model: "not-a-model", want: ""},
 	}

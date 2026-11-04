@@ -7,6 +7,10 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Experiment: OpenRouter systemone models typesafe/jev-1.14 and typesafe/jev-latest (2026-11-04)
+
+- Added `typesafe/jev-1.14` and `typesafe/jev-latest` to the OpenRouter catalogue (backend `registry_models.go` list + `systemone` kind tag, dashboard `web/src/lib/models.ts`) next to the existing `typesafe/jev-1.13`; routing is unchanged since OpenRouter already has a `SystemoneURL`. Note: OpenRouter documents the rolling alias as `~typesafe/jev-latest` (tilde prefix); the id added here is exactly `typesafe/jev-latest` as requested, and the tilde form is the fallback if a live call rejects it. Fragment `.changes/941-openrouter-jev-114-latest.md`. No provider connections were checked or tested live.
+
 ### Fix: cloudflare-ai systemone routing to the Workers AI run endpoint (2026-11-04)
 
 - Fixed the 400 code 7000 ("No route for that URI") on cloudflare-ai decision models (`@cf/cloudflare/clef-flash`, `@cf/cloudflare/clef`): the `/v1/systemone` lane used to send them to `.../ai/v1/systemone`, which Workers AI does not route. The lane (and the smart-router evaluation lane) now sends them to `.../ai/run/@cf/cloudflare/<model>` and puts the short name (`clef-flash`/`clef`) in the body model field, the only form Workers AI accepts there. Other providers keep the generic systemone rules. New helper `providers.CloudflareSystemoneURL`/`CloudflareSystemoneModel` plus unit, mock-upstream handler, and smart-router tests; fragment `.changes/940-cloudflare-systemone-run-route.md`. Known limitation: the Cloudflare `{"success": true, "result": {...}}` envelope is forwarded as-is, so callers expecting top-level `answers` must read `result.answers`. No provider connections were checked or tested live.
