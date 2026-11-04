@@ -426,8 +426,12 @@ func (h *ChatHandler) querySystemOneRouter(ctx context.Context, targetModel, sta
 		apiKey = providerCfg.DefaultAPIKey
 	}
 
+	routerModel := modelInfo.Model
+	if modelInfo.Provider == "cloudflare-ai" {
+		routerModel = providers.CloudflareSystemoneModel(modelInfo.Model)
+	}
 	question := map[string]any{
-		"model": modelInfo.Model,
+		"model": routerModel,
 		"state": state,
 		"questions": map[string]any{
 			"route": map[string]any{
@@ -444,7 +448,7 @@ func (h *ChatHandler) querySystemOneRouter(ctx context.Context, targetModel, sta
 
 	ctx, cancel := context.WithTimeout(ctx, smartRouterTimeout)
 	defer cancel()
-	targetURL := systemoneTargetURL(providerCfg, connData.BaseURL)
+	targetURL := systemoneTargetURL(providerCfg, connData.BaseURL, modelInfo.Provider, modelInfo.Model)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
@@ -589,9 +593,20 @@ func (h *ChatHandler) clearFailedSmartSticky(ctx context.Context, failedModel st
 
 // systemoneTargetURL mirrors the URL rules of the /v1/systemone media lane: a
 // connection override or provider SystemoneURL wins, else the chat base URL's
-// /chat/completions is swapped for /systemone.
-func systemoneTargetURL(cfg *providers.ProviderConfig, connOverride string) string {
+// /chat/completions is swapped for /systemone. Cloudflare is the exception:
+// Workers AI has no /ai/v1/systemone route, so a cloudflare-ai decision
+// model goes to the classic run endpoint instead.
+func systemoneTargetURL(cfg *providers.ProviderConfig, connOverride, provider, model string) string {
 	override := strings.TrimSpace(connOverride)
+	if provider == "cloudflare-ai" {
+		base := cfg.BaseURL
+		if override != "" {
+			base = override
+		}
+		if u, ok := providers.CloudflareSystemoneURL(base, model); ok {
+			return u
+		}
+	}
 	switch {
 	case override != "" && strings.Contains(override, "/chat/completions"):
 		return strings.Replace(strings.TrimRight(override, "/"), "/chat/completions", "/systemone", 1)

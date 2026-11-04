@@ -410,22 +410,45 @@ func (h *MediaHandler) forwardSystemoneRequest(w http.ResponseWriter, r *http.Re
 		override = strings.TrimSpace(connData.BaseURL)
 	}
 	var targetURL string
-	switch {
-	case override != "" && strings.Contains(override, "/chat/completions"):
-		targetURL = strings.Replace(strings.TrimRight(override, "/"), "/chat/completions", "/systemone", 1)
-	case override != "":
-		targetURL = buildSystemoneURL(override, providerCfg.SystemoneURL, providerCfg.SystemonePath)
-	case providerCfg.SystemoneURL != "":
-		targetURL = providerCfg.SystemoneURL
-	default:
-		baseURL := strings.TrimRight(providerCfg.BaseURL, "/")
-		if strings.Contains(baseURL, "/chat/completions") {
-			targetURL = strings.Replace(baseURL, "/chat/completions", "/systemone", 1)
-		} else {
-			targetURL = baseURL + "/systemone"
+	// Cloudflare Workers AI has no /ai/v1/systemone route, so the generic
+	// swap below would send .../ai/v1/systemone and draw HTTP 400 code
+	// 7000 ("No route for that URI"). Route cloudflare-ai decision models
+	// to the classic run endpoint instead; other providers keep the
+	// generic rules. A non-Workers-AI base (proxy override) falls back
+	// to those rules.
+	if modelInfo.Provider == "cloudflare-ai" {
+		base := providerCfg.BaseURL
+		if override != "" {
+			base = override
+		}
+		if u, ok := providers.CloudflareSystemoneURL(base, modelInfo.Model); ok {
+			targetURL = u
 		}
 	}
-	finalBody := handlerutil.UpdateModelInBody(body, modelInfo.Model)
+	if targetURL == "" {
+		switch {
+		case override != "" && strings.Contains(override, "/chat/completions"):
+			targetURL = strings.Replace(strings.TrimRight(override, "/"), "/chat/completions", "/systemone", 1)
+		case override != "":
+			targetURL = buildSystemoneURL(override, providerCfg.SystemoneURL, providerCfg.SystemonePath)
+		case providerCfg.SystemoneURL != "":
+			targetURL = providerCfg.SystemoneURL
+		default:
+			baseURL := strings.TrimRight(providerCfg.BaseURL, "/")
+			if strings.Contains(baseURL, "/chat/completions") {
+				targetURL = strings.Replace(baseURL, "/chat/completions", "/systemone", 1)
+			} else {
+				targetURL = baseURL + "/systemone"
+			}
+		}
+	}
+	// Workers AI accepts only "clef" / "clef-flash" in the body model
+	// field, not the catalog form "@cf/cloudflare/clef-flash".
+	bodyModel := modelInfo.Model
+	if modelInfo.Provider == "cloudflare-ai" {
+		bodyModel = providers.CloudflareSystemoneModel(modelInfo.Model)
+	}
+	finalBody := handlerutil.UpdateModelInBody(body, bodyModel)
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, targetURL, bytes.NewReader(finalBody))
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, "failed to create request")

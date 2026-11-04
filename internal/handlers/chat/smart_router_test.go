@@ -370,3 +370,21 @@ func TestClearFailedSmartSticky(t *testing.T) {
 		t.Fatal("pinned-model failure did not clear the pin")
 	}
 }
+
+func TestSystemoneTargetURL_Cloudflare(t *testing.T) {
+	cfg := &providers.ProviderConfig{BaseURL: "https://api.cloudflare.com/client/v4/accounts/acct123/ai/v1/chat/completions", AuthHeader: "Authorization", AuthScheme: "bearer"}
+	cases := []struct {
+		name, override, provider, model, want string
+	}{
+		{"catalog model", "", "cloudflare-ai", "@cf/cloudflare/clef-flash", "https://api.cloudflare.com/client/v4/accounts/acct123/ai/run/@cf/cloudflare/clef-flash"},
+		{"bare model", "", "cloudflare-ai", "clef-flash", "https://api.cloudflare.com/client/v4/accounts/acct123/ai/run/@cf/cloudflare/clef-flash"},
+		{"other provider keeps generic swap", "", "opencode", "jev-1.13-free", "https://api.cloudflare.com/client/v4/accounts/acct123/ai/v1/systemone"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := systemoneTargetURL(cfg, tc.override, tc.provider, tc.model); got != tc.want {
+				t.Errorf("systemoneTargetURL() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

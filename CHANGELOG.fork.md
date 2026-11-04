@@ -7,6 +7,10 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Fix: cloudflare-ai systemone routing to the Workers AI run endpoint (2026-11-04)
+
+- Fixed the 400 code 7000 ("No route for that URI") on cloudflare-ai decision models (`@cf/cloudflare/clef-flash`, `@cf/cloudflare/clef`): the `/v1/systemone` lane used to send them to `.../ai/v1/systemone`, which Workers AI does not route. The lane (and the smart-router evaluation lane) now sends them to `.../ai/run/@cf/cloudflare/<model>` and puts the short name (`clef-flash`/`clef`) in the body model field, the only form Workers AI accepts there. Other providers keep the generic systemone rules. New helper `providers.CloudflareSystemoneURL`/`CloudflareSystemoneModel` plus unit, mock-upstream handler, and smart-router tests; fragment `.changes/940-cloudflare-systemone-run-route.md`. Known limitation: the Cloudflare `{"success": true, "result": {...}}` envelope is forwarded as-is, so callers expecting top-level `answers` must read `result.answers`. No provider connections were checked or tested live.
+
 ### Docs: update GOAL.md and HANDOFF.md state to the a239df34 sync and Nous port (2026-11-04)
 
 - Updated the state sections of `GOAL.md` and `HANDOFF.md` from the superseded picture (fork up to date at `d6dd9481`, VERSION 1.9.16-exp.1) to the actual state: upstream synced through `a239df34` (12 commits after `d6dd9481`, snapshot push `68372337`, VERSION 1.9.16-exp.2), serenhope Nous seed models ported (push `d1cdeb7c`, Nous catalogue now 10 models), upstream head is `a239df34`, and the next sync covers only commits after `a239df34`. Also recorded that the Nov 04 snapshot pushes brought back the merge-base counting trap: the git merge-base is `d6dd9481` again, so a naive rev-list reports 12 already-synced commits; future syncs must count from `a239df34`. No code changed in this commit.
