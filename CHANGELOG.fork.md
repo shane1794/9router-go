@@ -7,6 +7,10 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Fix: OpenRouter Jev latest id is ~typesafe/jev-latest, not typesafe/jev-latest (2026-11-04)
+
+- Corrected the experiment from the previous entry: OpenRouter rejects `typesafe/jev-latest` with HTTP 400 "Model typesafe/jev-latest does not exist". Per OpenRouter's Jev Latest page, the rolling alias is `~typesafe/jev-latest` (tilde prefix) and it always redirects to the latest model in the Jev family (currently Jev 1.14). Catalogue, kind tag, dashboard entry, and test updated to `~typesafe/jev-latest`; `typesafe/jev-1.14` unchanged. Fragment `.changes/942-openrouter-jev-latest-tilde-alias.md`. No provider connections were checked or tested live.
+
 ### Experiment: OpenRouter systemone models typesafe/jev-1.14 and typesafe/jev-latest (2026-11-04)
 
 - Added `typesafe/jev-1.14` and `typesafe/jev-latest` to the OpenRouter catalogue (backend `registry_models.go` list + `systemone` kind tag, dashboard `web/src/lib/models.ts`) next to the existing `typesafe/jev-1.13`; routing is unchanged since OpenRouter already has a `SystemoneURL`. Note: OpenRouter documents the rolling alias as `~typesafe/jev-latest` (tilde prefix); the id added here is exactly `typesafe/jev-latest` as requested, and the tilde form is the fallback if a live call rejects it. Fragment `.changes/941-openrouter-jev-114-latest.md`. No provider connections were checked or tested live.

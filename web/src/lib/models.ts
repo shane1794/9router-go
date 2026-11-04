@@ -4682,7 +4682,7 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "kind": "systemone"
     },
     {
-      "id": "typesafe/jev-latest",
+      "id": "~typesafe/jev-latest",
       "name": "Jev Latest",
       "kind": "systemone"
     }
