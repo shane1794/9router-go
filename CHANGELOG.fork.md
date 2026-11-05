@@ -7,6 +7,10 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Fix: SenseNova points at the global platform (token.sensenova.ai), not the China endpoint (2026-11-05)
+
+- Provider `sensenova` pointed at the China Token Plan endpoint (`token.sensenova.cn`). Per the current docs at `https://platform.sensenova.ai/docs`, the global platform base URL is `https://token.sensenova.ai/v1` (chat `POST /v1/chat/completions`, images `POST /v1/images/generations`, keys `sk-` from `https://platform.sensenova.ai/console/keys`); BaseURL, ImageURL, Website, and API-key URL switched to `.ai`. Added missing documented model `sensenova-6.8-flash` to the catalogue (backend + dashboard); no capability row, since the docs give pricing in points, not a context window. Fragment `.changes/943-sensenova-global-platform-ai.md`. Unverified: `deepseek-v4-flash`, `deepseek-flash`, `glm-5.2`, `kimi-k3` were China Token Plan models and the `.ai` docs do not name them; if they 404 on `.ai`, remove them. Note: a `.cn` API key does not work on `.ai`, a new key is needed; a custom node still pointing at `token.sensenova.cn` keeps working (the reasoning strip already accepts both hosts). No provider connections were checked or tested live.
+
 ### Fix: OpenRouter Jev latest id is ~typesafe/jev-latest, not typesafe/jev-latest (2026-11-04)
 
 - Corrected the experiment from the previous entry: OpenRouter rejects `typesafe/jev-latest` with HTTP 400 "Model typesafe/jev-latest does not exist". Per OpenRouter's Jev Latest page, the rolling alias is `~typesafe/jev-latest` (tilde prefix) and it always redirects to the latest model in the Jev family (currently Jev 1.14). Catalogue, kind tag, dashboard entry, and test updated to `~typesafe/jev-latest`; `typesafe/jev-1.14` unchanged. Fragment `.changes/942-openrouter-jev-latest-tilde-alias.md`. No provider connections were checked or tested live.

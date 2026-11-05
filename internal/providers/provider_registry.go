@@ -1583,8 +1583,8 @@ var ProviderRegistry = map[string]ProviderMeta{
 		Color:        "#5B5CE2",
 		Icon:         "auto_awesome",
 		ServiceKinds: []string{"llm", "image", "imageToText"},
-		Website:      "https://token.sensenova.cn",
-		Notice:       &Notice{APIKeyURL: "https://token.sensenova.cn"},
+		Website:      "https://platform.sensenova.ai",
+		Notice:       &Notice{APIKeyURL: "https://platform.sensenova.ai/console/keys"},
 	},
 	"siliconflow": {
 		ID:           "siliconflow",

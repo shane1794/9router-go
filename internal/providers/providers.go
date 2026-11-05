@@ -616,10 +616,10 @@ var KnownProviders = map[string]ProviderConfig{
 		ThinkingFormat: "openai",
 	},
 	"sensenova": {
-		BaseURL:    "https://token.sensenova.cn/v1/chat/completions",
+		BaseURL:    "https://token.sensenova.ai/v1/chat/completions",
 		AuthHeader: "Authorization",
 		AuthScheme: "bearer",
-		ImageURL:   "https://token.sensenova.cn/v1/images/generations",
+		ImageURL:   "https://token.sensenova.ai/v1/images/generations",
 	},
 	"cloudflare-ai": {
 		BaseURL:        "https://api.cloudflare.com/client/v4/accounts/{accountId}/ai/v1/chat/completions",
