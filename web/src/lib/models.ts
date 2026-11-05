@@ -5039,22 +5039,6 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
         "watermark",
         "prompt_extend"
       ]
-    },
-    {
-      "id": "deepseek-v4-flash",
-      "name": "DeepSeek V4 Flash"
-    },
-    {
-      "id": "deepseek-flash",
-      "name": "DeepSeek V4.1 Flash"
-    },
-    {
-      "id": "glm-5.2",
-      "name": "GLM-5.2"
-    },
-    {
-      "id": "kimi-k3",
-      "name": "Kimi K3"
     }
   ],
   "siliconflow": [

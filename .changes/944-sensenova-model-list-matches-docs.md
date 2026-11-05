@@ -1,0 +1,5 @@
+### Fix: SenseNova model list matches the official docs (2026-11-05)
+
+- The SenseNova catalogue still listed four China Token Plan models (`deepseek-v4-flash`, `deepseek-flash`, `glm-5.2`, `kimi-k3`) that the global docs at `https://platform.sensenova.ai/docs` do not name. They are removed from the `sensenova` list (backend `registry_models.go` + dashboard `models.ts`); the list is now exactly the four documented models (`sensenova-6.8-flash`, `sensenova-6.8-flash-lite`, `sensenova-u1.5-lite`, `sensenova-u1.5-fast`). Follows fragment 943, which moved the endpoints to `token.sensenova.ai`.
+- Untouched on purpose: the global capability rows for those four ids stay, because other providers (DeepSeek, Z.ai, Kimi) still serve them; only their `sensenova` listing is gone. The `hcnsec` relay lists that include `sensenova-6.8-flash-lite` / `sensenova-u1.5-lite` also stay, since that is a different provider relaying them, not the SenseNova provider itself.
+- Verified: `go test ./internal/providers/` passes, `gofmt` clean; the only executor failure is the pre-existing Qoder TLS test. No provider connections were checked or tested live.

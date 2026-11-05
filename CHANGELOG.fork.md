@@ -7,6 +7,10 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Fix: SenseNova model list matches the official docs (2026-11-05)
+
+- Removed the four China Token Plan models (`deepseek-v4-flash`, `deepseek-flash`, `glm-5.2`, `kimi-k3`) from the `sensenova` list (backend + dashboard); the list is now exactly the four models the global docs name (`sensenova-6.8-flash`, `sensenova-6.8-flash-lite`, `sensenova-u1.5-lite`, `sensenova-u1.5-fast`). Follows the endpoint move in the previous entry. Fragment `.changes/944-sensenova-model-list-matches-docs.md`. Untouched: global capability rows for those four ids (other providers still serve them) and the `hcnsec` relay lists. No provider connections were checked or tested live.
+
 ### Fix: SenseNova points at the global platform (token.sensenova.ai), not the China endpoint (2026-11-05)
 
 - Provider `sensenova` pointed at the China Token Plan endpoint (`token.sensenova.cn`). Per the current docs at `https://platform.sensenova.ai/docs`, the global platform base URL is `https://token.sensenova.ai/v1` (chat `POST /v1/chat/completions`, images `POST /v1/images/generations`, keys `sk-` from `https://platform.sensenova.ai/console/keys`); BaseURL, ImageURL, Website, and API-key URL switched to `.ai`. Added missing documented model `sensenova-6.8-flash` to the catalogue (backend + dashboard); no capability row, since the docs give pricing in points, not a context window. Fragment `.changes/943-sensenova-global-platform-ai.md`. Unverified: `deepseek-v4-flash`, `deepseek-flash`, `glm-5.2`, `kimi-k3` were China Token Plan models and the `.ai` docs do not name them; if they 404 on `.ai`, remove them. Note: a `.cn` API key does not work on `.ai`, a new key is needed; a custom node still pointing at `token.sensenova.cn` keeps working (the reasoning strip already accepts both hosts). No provider connections were checked or tested live.
