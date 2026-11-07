@@ -32,16 +32,13 @@ func (s *oauthRefresherStub) refresher() oauth.Refresher {
 		if s.status == 0 {
 			return &oauth.TokenResult{AccessToken: "fresh-token", RefreshToken: "fresh-refresh", ExpiresIn: 3600}, nil
 		}
-		body := s.body
-		if body == "" {
-			body = "invalid_grant"
-		}
-		return nil, &providers.OAuthRefreshError{Status: s.status, Body: body}
+		return nil, &providers.OAuthRefreshError{Status: s.status, Body: s.body}
 	}
 }
 
 func installRefresher(t *testing.T, stub *oauthRefresherStub) {
 	oauth.ResetRefreshCache()
+	oauth.ResetRefreshSlots()
 	t.Helper()
 	previous := oauth.Get(oauthLockTestProvider)
 	oauth.Register(oauthLockTestProvider, stub.refresher())
@@ -70,6 +67,59 @@ func expiredOAuthData(t *testing.T) string {
 		t.Fatalf("marshal connection data: %v", err)
 	}
 	return string(raw)
+}
+
+// A revoked grant leaves the account parked and stamped testStatus =
+// reauth_required so the dashboard can surface "re-auth required" instead of
+// retrying a grant only a re-login can fix.
+func TestRejectedOAuthRefreshSurfacesReauthRequired(t *testing.T) {
+	database, cleanup := setupChatTestDB(t)
+	defer cleanup()
+	dropSeededConn(t, database)
+	installRefresher(t, &oauthRefresherStub{status: http.StatusUnauthorized})
+	insertOAuthConn(t, database, "conn-dead-oauth", 1, expiredOAuthData(t))
+
+	handler := NewChatHandler(db.NewRepo(database))
+	if _, _, err := handler.forceRefreshOAuthToken("conn-dead-oauth"); err == nil {
+		t.Fatal("expected the rejected refresh to report an error")
+	}
+
+	until, parked := db.ConnectionOAuthLockUntil(string(mustConnData(t, database, "conn-dead-oauth")))
+	if !parked {
+		t.Fatal("expected the account to be parked")
+	}
+	if !until.After(time.Now()) {
+		t.Error("park until is not in the future")
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(mustConnData(t, database, "conn-dead-oauth"), &raw); err != nil {
+		t.Fatalf("unmarshal connection data: %v", err)
+	}
+	if got, ok := raw["testStatus"].(string); !ok || got != providers.StatusReauthRequired {
+		t.Errorf("testStatus = %q (ok=%v), want %q", got, ok, providers.StatusReauthRequired)
+	}
+
+	// A successful refresh releases the park and clears the quarantine marker.
+	installRefresher(t, &oauthRefresherStub{})
+	token, _, err := handler.forceRefreshOAuthToken("conn-dead-oauth")
+	if err != nil {
+		t.Fatalf("refresh after repair: %v", err)
+	}
+	if token != "fresh-token" {
+		t.Fatalf("token = %q, want fresh-token", token)
+	}
+	if _, parked := db.ConnectionOAuthLockUntil(string(mustConnData(t, database, "conn-dead-oauth"))); parked {
+		t.Error("a successful refresh must release the park")
+	}
+	raw2 := mustConnData(t, database, "conn-dead-oauth")
+	var fixed map[string]any
+	if err := json.Unmarshal(raw2, &fixed); err != nil {
+		t.Fatalf("unmarshal connection data: %v", err)
+	}
+	if got, ok := fixed["testStatus"]; ok && got != nil {
+		t.Errorf("after clear testStatus = %v, want nil", got)
+	}
 }
 
 // parkAccount drives a connection through a rejected refresh and reports
@@ -120,10 +170,11 @@ func TestRejectedOAuthRefreshParksAccount(t *testing.T) {
 		body       string
 		wantParked bool
 	}{
-		{"revoked grant is parked", http.StatusUnauthorized, "unauthorized", true},
-		{"spent token is parked", http.StatusBadRequest, `{"error":"invalid_grant"}`, true},
-		{"bad request without dead grant is not parked", http.StatusBadRequest, `{"error":"slow_down"}`, false},
-		{"token endpoint down is not parked", http.StatusInternalServerError, "boom", false},
+		{"revoked grant is parked", http.StatusUnauthorized, "invalid_grant", true},
+		{"400 invalid_grant is parked", http.StatusBadRequest, "invalid_grant", true},
+		{"400 refresh_token_reused is parked", http.StatusBadRequest, "refresh_token_reused", true},
+		{"invalid request is not parked", http.StatusBadRequest, "invalid_scope", false},
+		{"token endpoint down is not parked", http.StatusInternalServerError, "", false},
 	}
 
 	for _, entry := range entryPoints {
