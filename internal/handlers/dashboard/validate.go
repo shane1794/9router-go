@@ -441,6 +441,16 @@ func validateProviderKey(ctx context.Context, provider string, cfg providers.Pro
 		return validateOutcome{valid: true, supported: true}
 	}
 
+	// Web-only providers (Exa, Tavily, Serper, ...) are probed with a minimal
+	// search/fetch request, the way upstream's probeWebProvider does. This
+	// must run before isAnthropicProbe below: providers like Exa authenticate
+	// with x-api-key, which that check keys on, so without this branch Exa was
+	// probed with an Anthropic messages body its /search endpoint cannot
+	// accept (it needs {"query": ...}).
+	if isWebOnlyProvider(provider) && (cfg.SearchURL != "" || cfg.FetchURL != "") {
+		return validateWebProvider(ctx, cfg, apiKey)
+	}
+
 	switch provider {
 	case "cloudflare-ai":
 		return validateCloudflareAI(ctx, cfg, apiKey, psd)
@@ -520,6 +530,55 @@ func validateProviderKey(ctx context.Context, provider string, cfg providers.Pro
 		return validateAnthropicStyle(ctx, provider, cfg, apiKey)
 	}
 	return validateGeneric(ctx, provider, cfg, apiKey)
+}
+
+// isWebOnlyProvider reports whether the provider serves only web search/fetch
+// (upstream probeWebProvider's isWebOnly gate): every declared kind is
+// webSearch or webFetch. The fork's registry also carries a "web" kind on
+// these providers (the lane-listing kind), which upstream does not declare,
+// so that counts as web-only too. A provider with no declared kinds is an
+// LLM provider, never web-only.
+func isWebOnlyProvider(provider string) bool {
+	meta, ok := providers.GetProviderMeta(provider)
+	if !ok || len(meta.ServiceKinds) == 0 {
+		return false
+	}
+	for _, kind := range meta.ServiceKinds {
+		if kind != "webSearch" && kind != "webFetch" && kind != "web" {
+			return false
+		}
+	}
+	return true
+}
+
+// validateWebProvider probes a web-only provider (Exa, Tavily, Serper, ...)
+// the way upstream's probeWebProvider does: a minimal request to its search
+// URL (falling back to its fetch URL) carrying {"query": "ping"} with the
+// provider's own auth header. Only 401/403 mean a bad key.
+func validateWebProvider(ctx context.Context, cfg providers.ProviderConfig, apiKey string) validateOutcome {
+	url := strings.TrimSpace(cfg.SearchURL)
+	method := strings.ToUpper(strings.TrimSpace(cfg.SearchMethod))
+	if url == "" {
+		url = strings.TrimSpace(cfg.FetchURL)
+		method = strings.ToUpper(strings.TrimSpace(cfg.FetchMethod))
+	}
+	if url == "" {
+		return validateOutcome{}
+	}
+	if method == "" {
+		method = http.MethodPost
+	}
+	headers := validateAuthHeaders(cfg, apiKey)
+	headers["Content-Type"] = "application/json"
+	var body []byte
+	if method == http.MethodPost {
+		body, _ = json.Marshal(map[string]any{"query": "ping", "q": "ping", "url": "https://example.com"})
+	}
+	status, _, err := validateProbeDo(ctx, method, url, headers, body)
+	if err != nil {
+		return validateOutcome{supported: true, message: err.Error()}
+	}
+	return validateOutcome{valid: status != http.StatusUnauthorized && status != http.StatusForbidden, supported: true}
 }
 
 // isAnthropicProbe reports whether the provider speaks the Anthropic messages

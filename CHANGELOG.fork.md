@@ -7,6 +7,12 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Fix: Exa (and other web search/fetch providers) actually work (2026-11-07)
+
+- The dashboard Test/Validate probe misclassified Exa as an Anthropic provider (`isAnthropicProbe` keys on AuthHeader `x-api-key`) and POSTed an Anthropic messages body to `https://api.exa.ai/search`, which Exa cannot accept; a valid official key was reported as "Invalid API key". `validateProviderKey` now probes web-only providers the way upstream's `probeWebProvider` does: a minimal POST of `{"query": "ping"}` to the provider's SearchURL (or FetchURL) with its own auth header; only 401/403 mean a bad key. Fragment `.changes/945-exa-web-provider-probe-search-fetch.md`.
+- The direct `/v1/search` lane ignored SearchURL and dialed `https://api.exa.ai/search/v1/search`, a route Exa does not serve; it now uses SearchURL like the combo lane already did. Affects every SearchURL provider, not just Exa.
+- `/v1/web/fetch` forwarded the client's singular `{"url": ...}` body as-is; Exa `/contents` and Tavily `/extract` require `{"urls": [...]}`. Both lanes now translate it; bodies already carrying `urls` pass through. No provider connections were checked or tested live.
+
 ### Fix: SenseNova model list matches the official docs (2026-11-05)
 
 - Removed the four China Token Plan models (`deepseek-v4-flash`, `deepseek-flash`, `glm-5.2`, `kimi-k3`) from the `sensenova` list (backend + dashboard); the list is now exactly the four models the global docs name (`sensenova-6.8-flash`, `sensenova-6.8-flash-lite`, `sensenova-u1.5-lite`, `sensenova-u1.5-fast`). Follows the endpoint move in the previous entry. Fragment `.changes/944-sensenova-model-list-matches-docs.md`. Untouched: global capability rows for those four ids (other providers still serve them) and the `hcnsec` relay lists. No provider connections were checked or tested live.

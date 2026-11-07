@@ -1053,6 +1053,11 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 							}
 						}
 					}
+					// Exa /contents and Tavily /extract take {"urls": [...]}; the
+					// gateway's own /v1/web/fetch API takes a singular {"url"}.
+					if resolved := providers.ResolveAlias(subInfo.Provider); resolved == "exa" || resolved == "tavily" {
+						finalBody = translateFetchURLsBody(finalBody)
+					}
 				}
 			}
 			req, err := http.NewRequestWithContext(r.Context(), method, targetURL, bytes.NewReader(finalBody))
@@ -1383,6 +1388,18 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	method := r.Method
+	// The endpoint the caller used is a route on this gateway, not a path on
+	// the vendor's host: without this override the default branch above
+	// appends it to BaseURL and builds URLs the vendor never serves (Exa got
+	// api.exa.ai/search/v1/search, Tavily api.tavily.com/search/v1/search).
+	// The combo branch already had this override; the direct lane did not.
+	if endpoint == "/v1/search" && providerCfg.SearchURL != "" {
+		targetURL = providerCfg.SearchURL
+		method = strings.ToUpper(providerCfg.SearchMethod)
+		if method == "" {
+			method = http.MethodPost
+		}
+	}
 	if endpoint == "/v1/web/fetch" && providerCfg.FetchURL != "" {
 		targetURL = providerCfg.FetchURL
 		if providerCfg.FetchMethod != "" {
@@ -1399,6 +1416,12 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 					finalBody = b
 				}
 			}
+		}
+		// Exa /contents and Tavily /extract take {"urls": [...]}; the gateway's
+		// own /v1/web/fetch API takes a singular {"url"}. Translate it (upstream
+		// fetch handler parity), leaving bodies that already carry "urls" alone.
+		if resolved := providers.ResolveAlias(modelInfo.Provider); resolved == "exa" || resolved == "tavily" {
+			finalBody = translateFetchURLsBody(finalBody)
 		}
 	}
 	log.Info("media", "forwarding to targetURL", "targetURL", targetURL, "method", method, "model", modelInfo.Model)
@@ -1513,6 +1536,31 @@ func rewriteMultipartModelPart(body []byte, contentType, oldModel, newModel stri
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// translateFetchURLsBody rewrites a singular {"url": "..."} fetch body into
+// the {"urls": ["..."]} shape the Exa /contents and Tavily /extract endpoints
+// require (upstream fetch handler parity: it sends {urls: [url]}). Bodies
+// that already carry "urls", carry no "url", or are not JSON pass through
+// untouched, and every other field is preserved.
+func translateFetchURLsBody(body []byte) []byte {
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil || raw == nil {
+		return body
+	}
+	if _, ok := raw["urls"]; ok {
+		return body
+	}
+	u, ok := raw["url"].(string)
+	if !ok || strings.TrimSpace(u) == "" {
+		return body
+	}
+	delete(raw, "url")
+	raw["urls"] = []string{u}
+	if out, err := json.Marshal(raw); err == nil {
+		return out
+	}
+	return body
 }
 
 // isVideoCreateEndpoint reports whether the endpoint creates a billable async
