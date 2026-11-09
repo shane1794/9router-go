@@ -1112,6 +1112,10 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 					}
 				}
 			}
+			if endpoint == "/v1/search" && providers.ResolveAlias(subInfo.Provider) == "exa" {
+				// Upstream parity, same as the direct lane below.
+				finalBody = buildExaSearchBody(finalBody)
+			}
 			req, err := http.NewRequestWithContext(r.Context(), method, targetURL, bytes.NewReader(finalBody))
 			if err != nil {
 				lastErr = err.Error()
@@ -1121,6 +1125,11 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 				req.Header[k] = v
 			}
 			handlerutil.SetAuthHeader(req, apiKey, providerCfg.AuthHeader, providerCfg.AuthScheme)
+			if providerCfg.AuthHeader != "" && providerCfg.AuthHeader != "Authorization" {
+				// Same leak as the direct lane: the dashboard's gateway key
+				// must not reach a vendor that authenticates on another header.
+				req.Header.Del("Authorization")
+			}
 			client, clientErr := h.ChatH.GetClientForConnection(connData)
 			if clientErr != nil {
 				lastErr = clientErr.Error()
@@ -1482,6 +1491,12 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 			finalBody = translateFetchURLsBody(finalBody)
 		}
 	}
+	if endpoint == "/v1/search" && providers.ResolveAlias(modelInfo.Provider) == "exa" {
+		// Upstream parity (open-sse/handlers/search/callers.js
+		// buildExaRequest): Exa serves a rebuilt body, not the gateway's
+		// {model, search_type, max_results} shape.
+		finalBody = buildExaSearchBody(finalBody)
+	}
 	log.Info("media", "forwarding to targetURL", "targetURL", targetURL, "method", method, "model", modelInfo.Model)
 	req, err := http.NewRequestWithContext(r.Context(), method, targetURL, bytes.NewReader(finalBody))
 	if err != nil {
@@ -1498,6 +1513,14 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 		req.Header.Set(k, v)
 	}
 	handlerutil.SetAuthHeader(req, apiKey, providerCfg.AuthHeader, providerCfg.AuthScheme)
+	if providerCfg.AuthHeader != "" && providerCfg.AuthHeader != "Authorization" {
+		// The dashboard's gateway key (Authorization: Bearer <client key>)
+		// was copied onto the upstream request above; a vendor that
+		// authenticates on another header must never see it. Upstream's
+		// dedicated search callers send exactly Content-Type + the vendor
+		// auth header.
+		req.Header.Del("Authorization")
+	}
 	connIDStr := ""
 	if conn != nil {
 		connIDStr = conn.ID[:min(8, len(conn.ID))]
@@ -1617,6 +1640,67 @@ func translateFetchURLsBody(body []byte) []byte {
 	raw["urls"] = []string{u}
 	if out, err := json.Marshal(raw); err == nil {
 		return out
+	}
+	return body
+}
+
+// buildExaSearchBody rebuilds a /v1/search body the way upstream's
+// buildExaRequest does (open-sse/handlers/search/callers.js): Exa serves
+// {query, numResults, type: "auto", text, highlights}, not the gateway's
+// {model, query, search_type, max_results} shape. Bodies without a query or
+// that are not JSON pass through untouched.
+func buildExaSearchBody(body []byte) []byte {
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil || raw == nil {
+		return body
+	}
+	query, _ := raw["query"].(string)
+	if strings.TrimSpace(query) == "" {
+		return body
+	}
+	// Upstream tryDedicatedProvider: max_results defaults to the provider's
+	// defaultMaxResults (5 for Exa, searchConfig) and is capped at
+	// maxMaxResults (100).
+	numResults := 5
+	if n, ok := raw["max_results"].(float64); ok && n > 0 {
+		numResults = int(n)
+	}
+	if numResults > 100 {
+		numResults = 100
+	}
+	out := map[string]any{
+		"query":      query,
+		"numResults": numResults,
+		"type":       "auto",
+		"text":       true,
+		"highlights": true,
+	}
+	if searchType, _ := raw["search_type"].(string); searchType == "news" {
+		out["category"] = "news"
+	}
+	// Upstream parseDomainFilter: entries starting with "-" are excludes.
+	if filter, ok := raw["domain_filter"].([]any); ok {
+		var includes, excludes []string
+		for _, d := range filter {
+			s, _ := d.(string)
+			if s == "" {
+				continue
+			}
+			if strings.HasPrefix(s, "-") {
+				excludes = append(excludes, strings.TrimPrefix(s, "-"))
+			} else {
+				includes = append(includes, s)
+			}
+		}
+		if len(includes) > 0 {
+			out["includeDomains"] = includes
+		}
+		if len(excludes) > 0 {
+			out["excludeDomains"] = excludes
+		}
+	}
+	if b, err := json.Marshal(out); err == nil {
+		return b
 	}
 	return body
 }
