@@ -31,6 +31,7 @@
   import { formatContextWindow } from '../../lib/formatContextWindow'
   import { copyToClipboard } from '../../lib/clipboard'
   import { parseModelIds } from '../../lib/bulk-models'
+  import { inferModelKind, customModelKeyFor } from '../../lib/modelKindInference'
   import {
     importCustomModelsBestEffort,
     notifyCustomModelsChanged,
@@ -48,10 +49,12 @@
     fetchSuggestedModels,
     getIconPath,
     isChatModel,
+    isConnectionError,
     type CustomModelData,
     type ModelItem,
     type SuggestedModel
   } from './types'
+  import { isBannedConnection, appealUrl } from '../../lib/ban'
   import { proxyBadgeInfo } from './proxyBadge'
   import {
     formatCheckAllSummary,
@@ -174,7 +177,52 @@
   // is NOT equivalent — kiro/gemini-cli are free with noAuth:false and still
   // need their Connect/OAuth + API Key buttons.
   let isNoAuth = $derived(selectedCatalogItem?.noAuth === true)
-  let hasRiskNotice = $derived(providerId === 'antigravity' || Boolean(selectedCatalogItem?.notice?.text?.includes('RISK_NOTICE')))
+
+  // Filtered connections for this provider, sorted by priority ASC
+  let providerConnections = $derived(
+    connections
+      .filter((c) => c.provider === providerId)
+      .sort((a, b) => (a.priority ?? 999999) - (b.priority ?? 999999))
+  )
+  let isProviderAllDisabled = $derived(
+    providerConnections.length > 0 && providerConnections.every((c) => c.isActive === 0)
+  )
+  let isProviderActive = $derived(providerConnections.some((c) => c.isActive === 1))
+
+  // Connection tab partition: every connection appears in exactly one tab.
+  let connTab = $state<'active' | 'error' | 'banned'>('active')
+  let bannedConnections = $derived(providerConnections.filter(isBannedConnection))
+  let errorConnections = $derived(
+    providerConnections.filter((c) => !isBannedConnection(c) && isConnectionError(c))
+  )
+  let activeConnections = $derived(
+    providerConnections.filter((c) => !isBannedConnection(c) && !isConnectionError(c))
+  )
+  let tabConnections = $derived(
+    connTab === 'banned'
+      ? bannedConnections
+      : connTab === 'error'
+        ? errorConnections
+        : activeConnections
+  )
+  let tabCounts = $derived({
+    active: activeConnections.length,
+    error: errorConnections.length,
+    banned: bannedConnections.length,
+  })
+  function tabMatches(c: ProviderConnection): boolean {
+    if (connTab === 'banned') return isBannedConnection(c)
+    if (connTab === 'error') return !isBannedConnection(c) && isConnectionError(c)
+    return !isBannedConnection(c) && !isConnectionError(c)
+  }
+
+  // Risk notice is driven by the connection's auth type (OAuth / subscription
+  // providers) and the upstream registry notice text — never by a hardcoded
+  // provider id such as `antigravity`.
+  let hasRiskNotice = $derived(
+    providerConnections.some((c) => c.authType === 'oauth') ||
+    Boolean(selectedCatalogItem?.notice?.text?.includes('RISK_NOTICE'))
+  )
 
   // MiniMax Code lease auth: the connection borrows the desktop app's sign-in
   // over its local broker, so there is no browser login and no stored refresh
@@ -210,16 +258,9 @@
     selectedNode?.id || selectedCatalogItem?.alias || PROVIDER_ID_TO_ALIAS[providerId] || providerId
   )
 
-  // Filtered connections for this provider, sorted by priority ASC
-  let providerConnections = $derived(
-    connections
-      .filter((c) => c.provider === providerId)
-      .sort((a, b) => (a.priority ?? 999999) - (b.priority ?? 999999))
-  )
-  let isProviderAllDisabled = $derived(
-    providerConnections.length > 0 && providerConnections.every((c) => c.isActive === 0)
-  )
-  let isProviderActive = $derived(providerConnections.some((c) => c.isActive === 1))
+  function openAppeal(url: string) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
 
   async function handleToggleProvider(targetActive: boolean) {
     try {
@@ -260,11 +301,22 @@
   // filter change; it is cleared on provider switch with the rest of the
   // model state (see the reset block below).
   let compatibleRows = $derived.by(() => {
-    const rows: Array<{ id: string; source: 'custom' | 'legacyAlias'; alias?: string; addedAt?: number }> = []
+    const rows: Array<{
+      id: string
+      source: 'custom' | 'legacyAlias'
+      alias?: string
+      addedAt?: number
+      kind?: string
+    }> = []
     const seen = new Set<string>()
     for (const cm of customModels) {
       if (!cm.id || cm.providerAlias !== storageAlias) continue
-      if ((cm.type || 'llm') !== 'llm') continue
+      // Every custom row on this node is listed, whatever its kind. This list is
+      // the only place a compatible node's custom models can be seen, tested or
+      // deleted, so filtering out the non-LLM ones made an imported TTS or video
+      // model unreachable: correctly absent from /v1/models, and equally absent
+      // from the one screen that could remove it. The row carries its kind so
+      // delete addresses the right key.
       const full = `${storageAlias}/${cm.id}`
       if (seen.has(full)) continue
       seen.add(full)
@@ -273,7 +325,12 @@
       // insertion order, and the newest write is last. A later row with the
       // same key keeps its original position (the upsert does not move it),
       // which is what "when was this first registered" means.
-      rows.push({ id: cm.id, source: 'custom', addedAt: customModels.length - customModels.indexOf(cm) })
+      rows.push({
+        id: cm.id,
+        source: 'custom',
+        addedAt: customModels.length - customModels.indexOf(cm),
+        kind: cm.type || 'llm',
+      })
     }
     const prefix = `${storageAlias}/`
     for (const [alias, full] of Object.entries(modelAliases || {})) {
@@ -2441,10 +2498,10 @@
     limits?: { contextWindow?: number; maxOutput?: number },
   ) {
     try {
-      await api.saveCustomModel(`${storageAlias}|${modelId}|llm`, {
+      await api.saveCustomModel(customModelKeyFor(storageAlias, modelId), {
         id: modelId,
         providerAlias: storageAlias,
-        type: 'llm',
+        type: inferModelKind(modelId),
         ...(caps ? { caps } : {}),
         ...(limits?.contextWindow ? { contextWindow: limits.contextWindow } : {}),
         ...(limits?.maxOutput ? { maxOutput: limits.maxOutput } : {}),
@@ -2589,7 +2646,7 @@
       // the response says which lines landed instead of leaving it to the refresh.
       const out = await api.saveCustomModelsBulk({
         providerAlias: storageAlias,
-        models: plan.ids.map((id) => ({ id, type: 'llm' })),
+        models: plan.ids.map((id) => ({ id, type: inferModelKind(id) })),
       })
       newCompatibleModel = ''
       await refreshCompatibleModels()
@@ -2615,10 +2672,10 @@
     }
     isAddingCompatibleModel = true
     try {
-      await api.saveCustomModel(`${storageAlias}|${modelId}|llm`, {
+      await api.saveCustomModel(customModelKeyFor(storageAlias, modelId), {
         id: modelId,
         providerAlias: storageAlias,
-        type: 'llm',
+        type: inferModelKind(modelId),
       })
       newCompatibleModel = ''
       await refreshCompatibleModels()
@@ -2633,10 +2690,10 @@
     }
   }
 
-  async function handleDeleteCompatibleModel(row: { id: string; source: string; alias?: string }) {
+  async function handleDeleteCompatibleModel(row: { id: string; source: string; alias?: string; kind?: string }) {
     try {
       if (row.source === 'custom') {
-        await api.deleteCustomModel(`${storageAlias}|${row.id}|llm`)
+        await api.deleteCustomModel(customModelKeyFor(storageAlias, row.id, row.kind))
       } else if (row.source === 'legacyAlias' && row.alias) {
         await api.deleteModelAlias(row.alias)
       }
@@ -2709,7 +2766,10 @@
   async function handleTestAllCompatibleModels() {
     if (compatibleTestAllRunning) return
     const pid = providerId
-    const ids = compatibleRows.map((r) => r.id)
+    // A probe is a chat request, so only chat rows are probed: a TTS or video
+    // model answers one with an error, and reporting that as a dead model would
+    // be a false failure for a model that works on its own lane.
+    const ids = compatibleRows.filter((r) => isChatModel({ type: r.kind })).map((r) => r.id)
     if (ids.length === 0) return
     compatibleTestAllRunning = true
     compatibleTestResults = {}
@@ -2772,8 +2832,8 @@
         if (freeOnly && !isFreeTierModelId(modelId)) continue
         pending.push({
           id: modelId,
-          key: `${storageAlias}|${modelId}|llm`,
-          value: { id: modelId, providerAlias: storageAlias, type: 'llm' },
+          key: customModelKeyFor(storageAlias, modelId),
+          value: { id: modelId, providerAlias: storageAlias, type: inferModelKind(modelId) },
         })
       }
       const outcome = await importCustomModelsBestEffort(pending, api.saveCustomModel)
@@ -2849,11 +2909,11 @@
             : 0
         pending.push({
           id: modelId,
-          key: `${storageAlias}|${modelId}|llm`,
+          key: customModelKeyFor(storageAlias, modelId),
           value: {
             id: modelId,
             providerAlias: storageAlias,
-            type: 'llm',
+            type: inferModelKind(modelId),
             ...(caps ? { caps } : {}),
             ...(declaredCtxLen > 0 ? { contextWindow: declaredCtxLen } : {}),
             ...(declaredMaxOut > 0 ? { maxOutput: declaredMaxOut } : {}),
@@ -2990,10 +3050,10 @@
 
   async function handleAddLatestModel(id: string, name?: string) {
     try {
-      await api.saveCustomModel(`${storageAlias}|${id}|llm`, {
+      await api.saveCustomModel(customModelKeyFor(storageAlias, id), {
         id,
         providerAlias: storageAlias,
-        type: 'llm',
+        type: inferModelKind(id),
         ...(name ? { name } : {}),
       })
       latestModels = latestModels.filter((m) => m.id !== id)
@@ -3233,12 +3293,13 @@
           await handleDisableModel(row.id)
           disabledOnly++
         } else if (row.source === 'legacyAlias') {
-          const alias = compatibleRows.find((r) => r.id === row.id)?.alias
-          if (alias) await api.deleteModelAlias(alias)
-          else await api.deleteCustomModel(`${storageAlias}|${row.id}|llm`)
+          const match = compatibleRows.find((r) => r.id === row.id)
+          if (match?.alias) await api.deleteModelAlias(match.alias)
+          else await api.deleteCustomModel(customModelKeyFor(storageAlias, row.id, match?.kind))
           deleted++
         } else {
-          await api.deleteCustomModel(`${storageAlias}|${row.id}|llm`)
+          const stored = compatibleRows.find((r) => r.id === row.id)?.kind
+          await api.deleteCustomModel(customModelKeyFor(storageAlias, row.id, stored))
           deleted++
         }
       } catch (err) {
@@ -3264,7 +3325,7 @@
     if (custom) {
       if (!confirm(`Delete custom model "${modelId}"?`)) return
       try {
-        await api.deleteCustomModel(`${storageAlias}|${modelId}|llm`)
+        await api.deleteCustomModel(customModelKeyFor(storageAlias, modelId, custom.type))
         const modelsData = await fetchProviderModelsData(providerId, storageAlias)
         customModels = modelsData.customModels
         notifyCustomModelsChanged()
@@ -3719,8 +3780,50 @@
       </div>
     {/if}
 
+    <!-- Connection tabs: Active / Error / Banned. Every connection belongs to
+         exactly one tab; banned connections are excluded from Error. -->
+    <div class="flex gap-1 border border-border rounded-lg bg-surface px-1 py-1 sm:px-2">
+      <button
+        type="button"
+        onclick={() => (connTab = 'active')}
+        class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors {connTab === 'active'
+          ? 'bg-primary text-white shadow-[var(--shadow-warm)]'
+          : tabCounts.active === 0
+            ? 'text-text-muted/40 pointer-events-none'
+            : 'text-text-main hover:text-text-main hover:bg-surface-2'}"
+        disabled={tabCounts.active === 0}
+      >
+        Active <span class="ml-1">{tabCounts.active}</span>
+      </button>
+      <button
+        type="button"
+        onclick={() => (connTab = 'error')}
+        class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors {connTab === 'error'
+          ? 'bg-red-500/10 text-red-600 dark:text-red-400 shadow-[var(--shadow-warm)]'
+          : tabCounts.error === 0
+            ? 'text-text-muted/40 pointer-events-none'
+            : 'text-text-main hover:text-text-main hover:bg-surface-2'}"
+        disabled={tabCounts.error === 0}
+      >
+        Error <span class="ml-1">{tabCounts.error}</span>
+      </button>
+      <button
+        type="button"
+        onclick={() => (connTab = 'banned')}
+        class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors {connTab === 'banned'
+          ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400 shadow-[var(--shadow-warm)]'
+          : tabCounts.banned === 0
+            ? 'text-text-muted/40 pointer-events-none'
+            : 'text-text-main hover:text-text-main hover:bg-surface-2'}"
+        disabled={tabCounts.banned === 0}
+      >
+        <span class="material-symbols-outlined text-[14px] mr-1">block</span>
+        Banned <span class="ml-1">{tabCounts.banned}</span>
+      </button>
+    </div>
+
     <!-- Connections List -->
-      {#if providerConnections.length === 0}
+      {#if tabConnections.length === 0}
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex items-center gap-3">
           <div class="inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary/10 text-primary shrink-0">
@@ -3798,7 +3901,7 @@
            click-away backdrop over the whole viewport, which otherwise swallows
            the first click on any priority chevron. -->
       <div class="relative z-50 flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03] max-h-[500px] overflow-y-auto pr-1">
-        {#each providerConnections as conn, idx (conn.id)}
+        {#each tabConnections as conn, idx (conn.id)}
           {@const isFirst = idx === 0}
           {@const isLast = idx === providerConnections.length - 1}
           {@const isSelected = selectedConnIds.includes(conn.id)}
@@ -3814,6 +3917,7 @@
                connection's persisted testStatus; the markup below only renders
                the verdict it returns. -->
           {@const connBadge = badgeFor(status, conn.testStatus, lastErr)}
+          {#if tabMatches(conn)}
           <div class="flex min-w-0 items-stretch">
             <!-- Multi-select checkbox -->
             <div class="flex shrink-0 items-center pl-1 sm:pl-2">
@@ -4144,6 +4248,14 @@
                       {/if}
                       <MenuItem label="Edit" icon="edit" onSelect={() => openEditConnection(conn)} />
 
+                      {#if appealUrl(conn)}
+                        <MenuItem
+                          label="Submit Appeal"
+                          icon="open_in_new"
+                          onSelect={() => openAppeal(appealUrl(conn)!)}
+                        />
+                      {/if}
+
                       <div class="my-1 border-t border-border-subtle" role="separator"></div>
 
                       <MenuItem label="Delete" icon="delete" danger onSelect={() => handleDeleteConnection(conn)} />
@@ -4169,6 +4281,7 @@
               </div>
             </div>
           </div>
+        {/if}
         {/each}
       </div>
     {/if}
