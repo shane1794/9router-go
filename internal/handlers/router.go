@@ -174,6 +174,7 @@ func SetupRoutes(r interface {
 	r.Delete("/headroom/extras", headroomH.HandleHeadroomExtras)
 	r.HandleFunc("/headroom/proxy", headroomH.HandleHeadroomProxy)
 	r.HandleFunc("/headroom/proxy/*", headroomH.HandleHeadroomProxy)
+	r.Post("/mcp", headroomH.HandleMCP)
 
 	r.Post("/api/headroom/start", headroomH.HandleHeadroomStart)
 	r.Post("/api/headroom/stop", headroomH.HandleHeadroomStop)
@@ -209,6 +210,13 @@ func SetupRoutes(r interface {
 	// GLM Reset Cards (Z.ai international)
 	r.Get("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleGetGLMResetCards)
 	r.Post("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleRedeemGLMResetCard)
+
+	// Free-pi ad surface. The creative is served to the dashboard, and the
+	// impression is reported only from the client's render event — an
+	// impression for an ad nobody saw is a false report to the advertiser whose
+	// spend funds the inference (see free_pi_ads.go).
+	r.Get("/api/free-pi/ad", dashH.HandleGetFreePiAd)
+	r.Post("/api/free-pi/ad/impression", dashH.HandleFreePiImpression)
 
 	// Debug Tracing Domain (p50/p95 latency per provider+model)
 	r.Get("/debug/traces", HandleDebugTraces)
@@ -283,6 +291,13 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	// GLM Reset Cards (Z.ai international)
 	r.Get("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleGetGLMResetCards)
 	r.Post("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleRedeemGLMResetCard)
+
+	// Free-pi ad surface. The creative is served to the dashboard, and the
+	// impression is reported only from the client's render event — an
+	// impression for an ad nobody saw is a false report to the advertiser whose
+	// spend funds the inference (see free_pi_ads.go).
+	r.Get("/api/free-pi/ad", dashH.HandleGetFreePiAd)
+	r.Post("/api/free-pi/ad/impression", dashH.HandleFreePiImpression)
 
 	// Cache Analytics & Management
 	r.Get("/api/cache", dashH.HandleGetCache)
@@ -377,6 +392,7 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Post("/api/keys/{id}/reset-quota", dashH.HandleResetApiKeyQuota)
 	r.Get("/api/keys/{id}/models", dashH.HandleGetApiKeyModels)
 	r.Put("/api/keys/{id}/models", dashH.HandleSetApiKeyModels)
+	r.Get("/api/keys/{id}/budget", dashH.HandleGetApiKeyBudget)
 	r.Put("/api/keys/{id}", dashH.HandleUpdateApiKey)
 	r.Get("/api/plans", dashH.HandleListPlans)
 	r.Post("/api/plans", dashH.HandleCreatePlan)
@@ -510,6 +526,16 @@ func mountOAuthRoutes(r interface {
 	r.Post("/api/oauth/freebuff/poll", oauthH.HandleFreebuffPoll)
 	r.Get("/api/oauth/freebuff/session", oauthH.HandleFreebuffSessionStatus)
 	r.Post("/api/oauth/freebuff/session/switch", oauthH.HandleFreebuffSessionSwitch)
+	// free-pi: GitHub device flow. initiate() refuses to call upstream unless the
+	// request asserts the user accepted the consent screen, and the consent text
+	// itself is served from here rather than duplicated in the SPA.
+	r.Get("/api/oauth/free-pi/consent", oauthH.HandleFreePiConsent)
+	r.Post("/api/oauth/free-pi/initiate", oauthH.HandleFreePiInitiate)
+	r.Post("/api/oauth/free-pi/poll", oauthH.HandleFreePiPoll)
+	// The dashboard equivalent of free-pi-cli's /close-other-session: a
+	// deliberate user action, because the same call would also end a human's
+	// running CLI session on that account.
+	r.Post("/api/oauth/free-pi/session/reset", oauthH.HandleFreePiSessionReset)
 	r.Get("/api/oauth/antigravity/authorize", oauthH.HandleAntigravityAuthorize)
 	r.Post("/api/oauth/antigravity/exchange", oauthH.HandleAntigravityExchange)
 	r.Get("/api/oauth/cline/authorize", oauthH.HandleClineAuthorize)

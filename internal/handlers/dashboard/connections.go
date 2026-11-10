@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"9router/proxy/internal/connlimit"
 	"9router/proxy/internal/handlers/chat"
 	"9router/proxy/internal/handlerutil"
 	"9router/proxy/internal/models"
@@ -147,7 +148,7 @@ var usageSupportedProviders = []string{
 	"commandcode", "deepseek", "gemini-cli", "gemini-web", "github", "glm", "glm-cn",
 	"grok-cli", "groq", "kimi", "kiro", "minimax", "minimax-cn", "minimax-code",
 	"minimax-code-global", "ollama",
-	"opencode-go", "opencode-zen", "qoder", "qoder-cn", "trae",
+	"free-pi", "opencode-go", "opencode-zen", "qoder", "qoder-cn", "trae",
 	"vercel-ai-gateway", "xiaomi-mimo", "zed",
 	"zcode",
 }
@@ -157,8 +158,8 @@ var usageSupportedProviders = []string{
 var usageApikeyProviders = []string{
 	"codebuddy-cn", "codebuddy-intl", "commandcode", "deepseek", "gemini-web", "glm",
 	"glm-cn", "groq", "kimi", "kiro", "minimax", "minimax-cn", "ollama",
-	"opencode-go", "opencode-zen", "qoder", "qoder-cn", "vercel-ai-gateway",
-	"xiaomi-mimo",
+	"free-pi", "opencode-go", "opencode-zen", "qoder", "qoder-cn",
+	"vercel-ai-gateway", "xiaomi-mimo",
 }
 
 func strSliceContains(list []string, v string) bool {
@@ -1034,6 +1035,7 @@ func (h *DashboardHandler) HandleDeleteConnection(w http.ResponseWriter, r *http
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	connlimit.Close(id) // release breaker/backoff state so nothing leaks
 
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "id": id})
 }
@@ -1462,6 +1464,23 @@ func (h *DashboardHandler) writeConnectionModels(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// Free-pi's catalogue lives at GET /client-version (unauthenticated,
+	// account-independent) rather than the standard /v1/models shape. The models
+	// array's `id` is the value a request must send as `model`.
+	if conn.Provider == providers.FreePiProviderID {
+		cv, err := freePiFetchModelsFromClientVersion(r.Context(), connData.APIKey, connData.ProviderSpecificData)
+		if err != nil {
+			handlerutil.WriteJSONError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+			"provider":     conn.Provider,
+			"connectionId": conn.ID,
+			"models":       cv,
+		})
+		return
+	}
+
 	isOpenAI := strings.HasPrefix(conn.Provider, "openai-compatible-")
 	isAnthropic := strings.HasPrefix(conn.Provider, "anthropic-compatible-")
 	if !isOpenAI && !isAnthropic {
@@ -1485,15 +1504,21 @@ func (h *DashboardHandler) writeConnectionModels(w http.ResponseWriter, r *http.
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	headers := map[string]string{"Content-Type": "application/json"}
+	// The OpenAI-compatible branch asks the same question the chat path asks:
+	// where is this node's `/models` route? It is derived from the completed
+	// chat route so both agree, including a bare host that gains `/v1`.
+	var listURL string
 	if isAnthropic {
 		baseURL = strings.TrimSuffix(baseURL, "/messages")
+		listURL = baseURL + "/models"
 		headers["x-api-key"] = connData.APIKey
 		headers["anthropic-version"] = "2023-06-01"
 		headers["Authorization"] = "Bearer " + connData.APIKey
 	} else {
 		headers["Authorization"] = "Bearer " + connData.APIKey
+		listURL = chat.CompatibleNodeModelsURL(baseURL)
 	}
-	status, body, err := validateProbeDo(r.Context(), http.MethodGet, baseURL+"/models", headers, nil)
+	status, body, err := validateProbeDo(r.Context(), http.MethodGet, listURL, headers, nil)
 	if err != nil {
 		statusCode, _, errMsg := ClassifyUpstreamNetworkError(err)
 		handlerutil.WriteJSONError(w, statusCode, "failed to fetch models: "+errMsg)

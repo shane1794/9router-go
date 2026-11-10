@@ -210,8 +210,12 @@ func TranslateOpenAIToGeminiWithSession(openaiBody []byte, sessionID string) ([]
 		Stream              bool           `json:"stream,omitempty"`
 		Tools               jsontext.Value `json:"tools,omitempty"`
 		ToolChoice          jsontext.Value `json:"tool_choice,omitempty"`
-		ReasoningEffort     string         `json:"reasoning_effort,omitempty"`
-		Thinking            *struct {
+		// ResponseFormat carries the client's OpenAI response_format (json_object
+		// / json_schema). The request is rebuilt field by field below, so a field
+		// this struct does not name is a field the Gemini upstream never sees.
+		ResponseFormat  jsontext.Value `json:"response_format,omitempty"`
+		ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+		Thinking        *struct {
 			Type         string `json:"type"`
 			BudgetTokens int    `json:"budget_tokens"`
 		} `json:"thinking,omitempty"`
@@ -514,6 +518,28 @@ func TranslateOpenAIToGeminiWithSession(openaiBody []byte, sessionID string) ([]
 		probe["enable_thinking"] = true
 	}
 	intent := thinking.Extract(probe)
+	// Parse include_thoughts / includeThoughts from the raw OpenAI body for the
+	// gemini-level wire format. includeThoughts defaults to true when thinking
+	// is active on the wire (level != "minimal" after clamping); the client can
+	// opt out with include_thoughts: false / includeThoughts: false. When the
+	// effective level is "minimal" (no thinking), GeminiConfig ignores it.
+	if intent != nil {
+		var raw map[string]any
+		if err := json.Unmarshal(openaiBody, &raw); err == nil {
+			if v, ok := raw["include_thoughts"]; ok {
+				if b, ok := v.(bool); ok {
+					intent.IncludeThoughts = &b
+				}
+			}
+			if intent.IncludeThoughts == nil {
+				if v, ok := raw["includeThoughts"]; ok {
+					if b, ok := v.(bool); ok {
+						intent.IncludeThoughts = &b
+					}
+				}
+			}
+		}
+	}
 	// The capability rows are model patterns, and the pattern table carries no
 	// provider scope, so the lookup is provider-agnostic by design: a vendor
 	// prefix on the model id is stripped and the global row for the bare id
@@ -535,6 +561,17 @@ func TranslateOpenAIToGeminiWithSession(openaiBody []byte, sessionID string) ([]
 	}
 	if maxTokens != nil {
 		genConfig["maxOutputTokens"] = *maxTokens
+	}
+	// Carry the client's OpenAI response_format onto Gemini's native structured
+	// output (generationConfig.responseMimeType / responseJsonSchema). Without
+	// this, a client asking for JSON got free text silently: the request is
+	// rebuilt field by field, and response_format was dropped on the way.
+	// Parity with KeiRouter transform.geminiResponseFormat.
+	if mime, schema, ok := geminiResponseFormat(oreq.ResponseFormat); ok {
+		genConfig["responseMimeType"] = mime
+		if schema != nil {
+			genConfig["responseJsonSchema"] = schema
+		}
 	}
 	if len(genConfig) > 0 {
 		configJSON, err := json.Marshal(genConfig, json.Deterministic(true))
