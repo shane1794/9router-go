@@ -293,7 +293,16 @@ func (h *MediaHandler) HandleRerank(w http.ResponseWriter, r *http.Request) {
 // buildRerankURL derives the rerank lane from a provider's base URL. A base
 // that already names a chat or embeddings lane is rewritten to the rerank
 // sibling, so a connection saved with either spelling still resolves.
+//
+// A Compatibility API base is the exception: the compatibility layer is an
+// OpenAI shim and OpenAI has no rerank lane, so /compatibility/v1/rerank
+// does not exist. Rerank resolves on the provider's native v1 endpoint
+// instead (Cohere's native /v1/rerank takes the same {model, query,
+// documents} shape the gateway forwards).
 func buildRerankURL(baseURL string) string {
+	if strings.Contains(baseURL, "/compatibility/v1/chat/completions") {
+		return strings.Replace(baseURL, "/compatibility/v1/chat/completions", "/v1/rerank", 1)
+	}
 	for _, lane := range []string{"/chat/completions", "/embeddings"} {
 		if strings.Contains(baseURL, lane) {
 			return strings.Replace(baseURL, lane, "/rerank", 1)

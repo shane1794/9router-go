@@ -32,6 +32,11 @@ func TestBuildEmbeddingsURL(t *testing.T) {
 			baseURL: "https://api.openai.com",
 			want:    "https://api.openai.com/embeddings",
 		},
+		{
+			name:    "cohere compatibility base keeps its prefix",
+			baseURL: "https://api.cohere.ai/compatibility/v1/chat/completions",
+			want:    "https://api.cohere.ai/compatibility/v1/embeddings",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

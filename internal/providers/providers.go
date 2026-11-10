@@ -618,8 +618,20 @@ var KnownProviders = map[string]ProviderConfig{
 		ImageURL:   "https://api.x.ai/v1/images/generations",
 		VideoURL:   "https://api.x.ai/v1/videos",
 	},
+	// Cohere's native API has no OpenAI-shaped /v1/chat/completions route:
+	// an authenticated POST there answers 405, so the gateway's generic
+	// OpenAI forward can never succeed against it. Cohere's own
+	// Compatibility API (docs.cohere.com/docs/compatibility-api) serves the
+	// OpenAI Chat Completions shape at /compatibility/v1/chat/completions,
+	// including streaming, tools, and structured outputs, with the same
+	// Bearer key. Upstream (luqman-v1/9router-go at 298fee33, and serenhope's
+	// cohere.js) still point at the dead /v1 path, so this is fork-only
+	// until upstream moves. The embeddings lane follows automatically
+	// (compatibility/v1/embeddings is documented); rerank has no
+	// compatibility lane and stays on the native /v1/rerank, see
+	// buildRerankURL.
 	"cohere": {
-		BaseURL:    "https://api.cohere.ai/v1/chat/completions",
+		BaseURL:    "https://api.cohere.ai/compatibility/v1/chat/completions",
 		AuthHeader: "Authorization",
 		AuthScheme: "bearer",
 	},

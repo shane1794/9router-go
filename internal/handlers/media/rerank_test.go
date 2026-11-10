@@ -132,6 +132,10 @@ func TestBuildRerankURL(t *testing.T) {
 		{"chat lane is rewritten", "https://api.example.com/v1/chat/completions", "https://api.example.com/v1/rerank"},
 		{"embeddings lane is rewritten", "https://api.example.com/v1/embeddings", "https://api.example.com/v1/rerank"},
 		{"v1 base gains the lane", "https://api.example.com/v1", "https://api.example.com/v1/rerank"},
+		// Cohere's Compatibility API is an OpenAI shim and OpenAI has no
+		// rerank lane, so a compatibility base resolves rerank on the native
+		// v1 endpoint instead of inventing /compatibility/v1/rerank.
+		{"compatibility base resolves rerank natively", "https://api.cohere.ai/compatibility/v1/chat/completions", "https://api.cohere.ai/v1/rerank"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

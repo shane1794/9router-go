@@ -263,6 +263,62 @@ func TestHandleChatCompletions_NonStreaming(t *testing.T) {
 	}
 }
 
+// The reported failure: a cohere chat request went to
+// https://api.cohere.ai/v1/chat/completions and Cohere answered 405 — the
+// native API has no OpenAI-shaped route there. The registry points cohere
+// at the Compatibility API instead, so a plain cohere connection (no
+// baseUrl override) must land on /compatibility/v1/chat/completions.
+func TestHandleChatCompletions_CohereCompatibilityEndpoint(t *testing.T) {
+	database, cleanup := setupChatTestDB(t)
+	defer cleanup()
+
+	var gotPath string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-test-cohere-key" {
+			t.Errorf("expected Bearer auth, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"command-a-03-2025","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer upstream.Close()
+
+	// Point the registry at the mock upstream for this test only; the
+	// production value is pinned by TestCohereChatUsesCompatibilityEndpoint.
+	orig := providers.KnownProviders["cohere"]
+	patched := orig
+	patched.BaseURL = upstream.URL + "/compatibility/v1/chat/completions"
+	providers.KnownProviders["cohere"] = patched
+	t.Cleanup(func() { providers.KnownProviders["cohere"] = orig })
+
+	// A plain cohere connection: no baseUrl override, so the registry
+	// BaseURL is what the forward uses.
+	customData, _ := json.Marshal(map[string]any{"apiKey": "sk-test-cohere-key"})
+	_, err := database.Exec(`INSERT INTO providerConnections (id, provider, authType, name, priority, isActive, data, createdAt, updatedAt) VALUES
+		('conn-cohere', 'cohere', 'apikey', 'Mock Cohere', 0, 1, ?, '2026-07-18T00:00:00Z', '2026-07-18T00:00:00Z')`,
+		string(customData))
+	if err != nil {
+		t.Fatalf("failed to insert mock connection: %v", err)
+	}
+
+	repo := db.NewRepo(database)
+	handler := NewChatHandler(repo)
+
+	reqBody := `{"model":"cohere/command-a-03-2025","messages":[{"role":"user","content":"hello"}],"stream":false}`
+	req := httptest.NewRequest("POST", "/chat/completions", strings.NewReader(reqBody))
+	rec := httptest.NewRecorder()
+
+	handler.HandleChatCompletions(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d, body: %s", rec.Code, rec.Body.String())
+	}
+	if gotPath != "/compatibility/v1/chat/completions" {
+		t.Errorf("upstream received path %q, want /compatibility/v1/chat/completions", gotPath)
+	}
+}
+
 func TestHandleChatCompletions_MissingModel(t *testing.T) {
 	database, cleanup := setupChatTestDB(t)
 	defer cleanup()

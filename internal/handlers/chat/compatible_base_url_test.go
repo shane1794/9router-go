@@ -31,6 +31,7 @@ func TestCompatibleNodeModelsURLFollowsTheChatRoute(t *testing.T) {
 		{"vendor segment before a version is not doubled", "https://api.example.com/openai/v1", "https://api.example.com/openai/v1/models"},
 		{"full chat route is reduced to models", "https://api.example.com/v1/chat/completions", "https://api.example.com/v1/models"},
 		{"a named route keeps its own models child", "https://api.example.com/v1/proxy", "https://api.example.com/v1/proxy/models"},
+		{"cohere compatibility base resolves models on the same route", "https://api.cohere.ai/compatibility/v1/chat/completions", "https://api.cohere.ai/compatibility/v1/models"},
 	}
 
 	for _, tt := range tests {

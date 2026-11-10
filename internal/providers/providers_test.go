@@ -439,3 +439,18 @@ func TestNewProvidersRegistry_v062(t *testing.T) {
 		}
 	}
 }
+
+// Cohere's native API has no OpenAI-shaped /v1/chat/completions route: an
+// authenticated POST there answers 405. The registry must point at Cohere's
+// Compatibility API, which serves the OpenAI Chat Completions shape
+// (docs.cohere.com/docs/compatibility-api).
+func TestCohereChatUsesCompatibilityEndpoint(t *testing.T) {
+	cfg, ok := KnownProviders["cohere"]
+	if !ok {
+		t.Fatal("expected KnownProviders to contain \"cohere\"")
+	}
+	want := "https://api.cohere.ai/compatibility/v1/chat/completions"
+	if cfg.BaseURL != want {
+		t.Errorf("cohere BaseURL = %q, want %q", cfg.BaseURL, want)
+	}
+}
