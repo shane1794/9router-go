@@ -75,25 +75,25 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 
 ## ⚡ Quick Start
 
-**1. Install (one line):**
+**1. Build from source — the only way to install this fork:**
+
+There is no installer, release binary, or Docker image for this fork: the
+one-line installers and release assets in the upstream README install
+upstream's build, not this fork. Clone this fork and build it:
 
 ```bash
-# macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/luqman-v1/9router-go/main/install.sh | bash
+# Prerequisites: Go 1.27 and Bun 1.x (the dashboard is embedded into the binary, so build web first)
+git clone https://github.com/shane1794/9router-go.git
+cd 9router-go
+make web-build   # bun install --frozen-lockfile && bun run build
+make build       # embeds VERSION into the Go binary
 ```
 
-```powershell
-# Windows (PowerShell — installer writes to %LOCALAPPDATA% + user PATH, no admin needed)
-irm https://raw.githubusercontent.com/luqman-v1/9router-go/main/install.ps1 | iex
-```
-
-> **CPU without AVX?** Celeron/Pentium N-series, older Atom and some VMs max out at SSE4.2, and an x86-64 binary built for a newer microarchitecture dies with `Illegal instruction` before it starts. Use the no-AVX asset (linux/amd64) instead of the default one:
+> **CPU without AVX?** Celeron/Pentium N-series, older Atom and some VMs max out at SSE4.2, and an x86-64 binary built for a newer microarchitecture dies with `Illegal instruction` before it starts. Build with the baseline instruction set instead:
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/luqman-v1/9router-go/main/install-noavx.sh | bash
+> CGO_ENABLED=0 GOAMD64=v1 make build
 > ```
->
-> It installs the same binary from the `9router-go-linux-amd64-noavx` release asset, which is built with `CGO_ENABLED=0` and `GOAMD64=v1`. `VARIANT=noavx` on `install.sh` does the same thing.
 
 🎉 Then start it (defaults: port `20130`, data `~/.9router` — no flags needed):
 
@@ -156,22 +156,7 @@ Claude Code / Codex / OpenClaw / Cursor / Cline Settings:
 
 **That's it!** Start coding with FREE AI models.
 
-**Alternatives:**
-
-```bash
-# Docker — no build needed
-docker run -d --name 9router-go --restart unless-stopped \
-  -p 20130:20130 -v "$HOME/.9router:/data" \
-  -e PORT=20130 -e DATA_DIR=/data \
-  -e INITIAL_PASSWORD=your-secure-password \
-  luqmenul/9router-go:latest
-
-# Manual download — pick your file, no command line guesswork:
-# Windows → .exe | Mac M1+ → darwin-arm64 | Mac Intel → darwin-amd64
-# Linux VPS → linux-amd64 | Raspberry Pi → linux-arm64
-```
-
-📦 [All release binaries](https://github.com/luqman-v1/9router-go/releases/latest) • 🔨 [Build from source](#-setup-guide)
+🔨 [Build from source](#-setup-guide) — full prerequisites, run options, and login notes.
 
 ---
 
@@ -256,34 +241,12 @@ Full schema, operator contract, and multi-process limits: [`DATABASE.md`](DATABA
 
 ## ⚙️ Setup Guide
 
-### Release binary
-
-Download from [GitHub Releases](https://github.com/luqman-v1/9router-go/releases/latest), verify against `SHA256SUMS.txt`.
-
-### 🧪 Experimental builds
-
-Unreleased work also ships as **experimental** builds. They are published
-separately and are never offered to a normal install:
-
-- GitHub Releases marks them **Pre-release**, so `releases/latest` — the URL
-  `9router-go update` falls back to — keeps pointing at the stable version.
-- Docker Hub tags them `exp` (`luqmenul/9router-go:exp`), never `latest`.
-
-```bash
-docker pull luqmenul/9router-go:exp
-```
-
-Opt in only if you want to help shake out bugs. `9router-go update` will not
-install one over a stable release — grab the asset for your platform from the
-[pre-releases page](https://github.com/luqman-v1/9router-go/releases) and
-replace the running binary with it.
-
 ### Build from source
 
 Prerequisites: Go 1.27 and Bun 1.x (dashboard is embedded into the binary, so build web first):
 
 ```bash
-git clone https://github.com/luqman-v1/9router-go.git
+git clone https://github.com/shane1794/9router-go.git
 cd 9router-go
 make web-build   # bun install --frozen-lockfile && bun run build
 make build       # embeds VERSION into the Go binary

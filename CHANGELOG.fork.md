@@ -7,6 +7,11 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Docs: README install guide is build-from-source only (2026-11-11)
+
+- The README's install guide offered the upstream one-line installers (`install.sh`, `install.ps1`, `install-noavx.sh`), the `luqmenul/9router-go` Docker image, manual release downloads, and the experimental pre-release builds — every one of them installs upstream's build, not this fork. The guide now documents only build from source: clone `shane1794/9router-go`, `make web-build`, `make build`. The no-AVX note is reframed as a build flag (`CGO_ENABLED=0 GOAMD64=v1 make build`) instead of a release asset, and the "Release binary" and "Experimental builds" sections are removed. Fragment `.changes/949-readme-install-build-from-source-only.md`.
+- Verified: grep confirms no install path in README still points at upstream (remaining `luqman-v1` links are header badges and docs/credits links, not install steps); both `git clone` lines point at the fork; the edited sections read back cleanly. No code changed, so no build or test run was needed for this docs-only change.
+
 ### Fix: Cohere chat now uses the Compatibility API endpoint (2026-11-10)
 
 - Chat requests to Cohere went to `https://api.cohere.ai/v1/chat/completions` and Cohere answered 405: the native API has no OpenAI-shaped route there (its Chat API is `/v1/chat` with `{message, chat_history}` in v1 and `/v2/chat` with a `messages` array in v2). The registry now points cohere at Cohere's own Compatibility API, `https://api.cohere.ai/compatibility/v1/chat/completions` (docs.cohere.com/docs/compatibility-api), which serves the OpenAI Chat Completions shape — including streaming, tools, and structured outputs — with the same Bearer key, so the generic OpenAI forward needs no translation. Upstream (luqman-v1/9router-go at 298fee33, and serenhope's cohere.js) still point at the dead `/v1` path, so this is fork-only until upstream moves. Fragment `.changes/948-cohere-compatibility-endpoint.md`.
