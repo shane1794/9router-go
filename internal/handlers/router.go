@@ -210,6 +210,16 @@ func SetupRoutes(r interface {
 	// GLM Reset Cards (Z.ai international)
 	r.Get("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleGetGLMResetCards)
 	r.Post("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleRedeemGLMResetCard)
+	// Claude reset credits (cedar_ember grants)
+	r.Get("/api/usage/{connectionId}/claude-reset-credits", dashH.HandleListClaudeResetCredits)
+	r.Post("/api/usage/{connectionId}/claude-reset-credits/consume", dashH.HandleConsumeClaudeResetCredit)
+
+	// Free-pi ad surface. The creative is served to the dashboard, and the
+	// impression is reported only from the client's render event — an
+	// impression for an ad nobody saw is a false report to the advertiser whose
+	// spend funds the inference (see free_pi_ads.go).
+	r.Get("/api/free-pi/ad", dashH.HandleGetFreePiAd)
+	r.Post("/api/free-pi/ad/impression", dashH.HandleFreePiImpression)
 
 	// Free-pi ad surface. The creative is served to the dashboard, and the
 	// impression is reported only from the client's render event — an
@@ -291,6 +301,16 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	// GLM Reset Cards (Z.ai international)
 	r.Get("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleGetGLMResetCards)
 	r.Post("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleRedeemGLMResetCard)
+	// Claude reset credits (cedar_ember grants)
+	r.Get("/api/usage/{connectionId}/claude-reset-credits", dashH.HandleListClaudeResetCredits)
+	r.Post("/api/usage/{connectionId}/claude-reset-credits/consume", dashH.HandleConsumeClaudeResetCredit)
+
+	// Free-pi ad surface. The creative is served to the dashboard, and the
+	// impression is reported only from the client's render event — an
+	// impression for an ad nobody saw is a false report to the advertiser whose
+	// spend funds the inference (see free_pi_ads.go).
+	r.Get("/api/free-pi/ad", dashH.HandleGetFreePiAd)
+	r.Post("/api/free-pi/ad/impression", dashH.HandleFreePiImpression)
 
 	// Free-pi ad surface. The creative is served to the dashboard, and the
 	// impression is reported only from the client's render event — an
@@ -819,7 +839,21 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	// before any traffic, so the cache on that instance never fills.
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireDashboardAuth(repo))
+		// The audit trail records every mutating dashboard request (plus the
+		// sensitive reads it names) and serves the log itself. It reads the
+		// recorder from the repo per request — the recorder starts in the boot
+		// hook, after this router exists, so a nil recorder simply means
+		// "auditing off" for a router built by hand in a unit test.
+		r.Use(dashboard.AuditMiddleware(repo))
 		SetupDashboardRoutes(r, repo, engineChatH)
+		// The log itself: list, export, verify the chain, and the recorder
+		// counters. Mounted in this group (not inside SetupDashboardRoutes) so
+		// the endpoints are present in a production boot even though the tests
+		// table RegisterRoutes mounts does not know them.
+		r.Get("/api/audit", dashH.HandleAuditList)
+		r.Get("/api/audit/export", dashH.HandleAuditExport)
+		r.Get("/api/audit/verify", dashH.HandleAuditVerify)
+		r.Get("/api/audit/status", dashH.HandleAuditStatus)
 	})
 
 	// CLI Tools status is a dashboard read: the SPA calls it with the session

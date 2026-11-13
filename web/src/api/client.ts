@@ -36,7 +36,16 @@ export interface ProviderConnection {
   lastErrorSource?: 'chat' | null
   displayName?: string | null
   assignedModel?: string | null
-  providerSpecificData?: { assignedModel?: string | null; [key: string]: unknown }
+  mediaEnabled?: boolean
+  isMediaActive?: boolean
+  disabledKinds?: string[]
+  providerSpecificData?: {
+    assignedModel?: string | null
+    disabledKinds?: string[]
+    mediaEnabled?: boolean
+    isMediaActive?: boolean
+    [key: string]: unknown
+  }
 }
 
 export interface Combo {
@@ -333,6 +342,8 @@ export interface Settings {
   headroomKompress?: boolean
   semanticCacheEnabled?: boolean
   semanticCacheTTL?: number
+  // Prompt-cache window 9router pins on Claude head anchors: "5m" (default) or "1h".
+  claudeCacheTtl?: '5m' | '1h'
   semanticCacheMaxEntries?: number
   autoUpdate?: boolean
   /** Dashboard security & SSO (profile page, Next parity). */
@@ -2454,6 +2465,20 @@ export const api = {
   consumeCodexResetCredit: (connectionId: string, selectionToken: string, idempotencyKey?: string) =>
     request<CodexResetCreditConsumeResponse>(
       `/api/usage/${encodeURIComponent(connectionId)}/reset-credits/consume`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selectionToken, idempotencyKey }),
+      }
+    ),
+  // Claude reset credits (cedar_ember grants). Only for provider == "claude".
+  listClaudeResetCredits: (connectionId: string) =>
+    request<CodexResetCreditListResponse>(
+      `/api/usage/${encodeURIComponent(connectionId)}/claude-reset-credits`
+    ),
+  consumeClaudeResetCredit: (connectionId: string, selectionToken: string, idempotencyKey?: string) =>
+    request<CodexResetCreditConsumeResponse>(
+      `/api/usage/${encodeURIComponent(connectionId)}/claude-reset-credits/consume`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

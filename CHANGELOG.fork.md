@@ -7,6 +7,14 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Upstream sync to 21d1fc5a (2026-11-13)
+
+- Synced upstream luqman-v1/9router-go through `21d1fc5a` (Kenari provider #1155, Go toolchain 1.27.4 #1153, version bump to 1.9.17-exp.1, SOCKS5 #1120, prompt-cache TTL #1121, xiaomi-tokenplan #1119, antigravity revert #1118, kiro #1117, free-pi revert #1116). Trial merge had 44 conflicts, all resolved. Fork behaviour preserved: CodeBuddy fresh request/conversation ids, fork-only `make build` (only `9router-go`), model context tags, Nous catalogue (10 models), Jev tilde alias, SenseNova `.ai` pointing + 4-model list, clef systemone routing, Exa probe/fetch/search translation, media-page Add Connection `apiKey` fix, and the sensenova registry line.
+- Codex responses-lite now follows upstream's contract-based selection (`shapeCodexResponsesBody` + the `x-openai-internal-codex-responses-lite` header) instead of the fork's model-list `applyCodexModelShape`, which upstream removed; the web-search/Claude translation helpers (`translateCodexClaudeWebSearch`, `translateCodexClaudeWebSearchChoice`, `registerCodexHostedWebSearch`) now come from upstream unchanged, so `transform.go` no longer needs the fork's `applyCodexModelShape` call. This keeps the codex lane consistent with upstream's `providers.go`, handlers, and tests.
+- Deleted fork test `internal/handlers/media/cloudflare_flux2_test.go`: it referenced `isCloudflareFlux2Model` and `flux2ReferenceImage`, which are not defined anywhere in the repo (not even at fork HEAD), so it never compiled.
+- Fixed auto-merge artifacts: duplicate `TestConnectionRequiresReauth` in `internal/db/accounts_oauth_lock_test.go`; missing closing brace in `TestCohereChatUsesCompatibilityEndpoint` (`internal/providers/providers_test.go`); duplicated `httptest` server block in `internal/handlers/chat/compatible_base_url_test.go` and a `gotPath` declaration lost with it.
+- VERSION is now 1.9.17-exp.1. Verified: `make build` passes (1.9.17-exp.1 embedded), `go build ./...` and `go vet ./...` are clean, and all test packages compile (`go test -run '^$' ./...`). No provider connections were checked or tested live.
+
 ### Docs: README install guide is build-from-source only (2026-11-11)
 
 - The README's install guide offered the upstream one-line installers (`install.sh`, `install.ps1`, `install-noavx.sh`), the `luqmenul/9router-go` Docker image, manual release downloads, and the experimental pre-release builds — every one of them installs upstream's build, not this fork. The guide now documents only build from source: clone `shane1794/9router-go`, `make web-build`, `make build`. The no-AVX note is reframed as a build flag (`CGO_ENABLED=0 GOAMD64=v1 make build`) instead of a release asset, and the "Release binary" and "Experimental builds" sections are removed. Fragment `.changes/949-readme-install-build-from-source-only.md`.

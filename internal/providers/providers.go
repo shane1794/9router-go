@@ -219,6 +219,12 @@ var modelsListURL = map[string]string{
 	// registry catalog is a fixed 22-model list, so without this entry the
 	// dashboard cannot discover anything the snapshot predates.
 	"commandcode": "https://api.commandcode.ai/provider/v1/models",
+	// The documented Provider API entry reads the same keyless feed. It lists
+	// every id the provider serves (97 at the 2026-11-11 snapshot), which is
+	// what the generated catalogue in commandcode_goat_catalog.go was built
+	// from; the live fetch is what keeps a new release discoverable.
+	"commandcode-goat": "https://api.commandcode.ai/provider/v1/models",
+	"cmc-goat":         "https://api.commandcode.ai/provider/v1/models",
 	// Five more providers whose catalogue is reachable without a valid
 	// credential, so the discovery path that fixed commandcode covers them
 	// unchanged: "Check Latest Models", "Import from /models" and "Sync Models"
@@ -843,6 +849,11 @@ var KnownProviders = map[string]ProviderConfig{
 		ThinkingFormat: "openai",
 		Hidden:         true,
 	},
+	"kenari": {
+		BaseURL:    "https://kenari.id/v1/chat/completions",
+		AuthHeader: "Authorization",
+		AuthScheme: "bearer",
+	},
 	"alitp-intl": {
 		// Token Plan is served from the .maas host under the compatible-mode
 		// path, not the bare /v1 path (upstream registry/alitp-intl.js:23).
@@ -903,6 +914,20 @@ var KnownProviders = map[string]ProviderConfig{
 			"x-cli-surface":          "cli",
 			"x-taste-learning":       "false",
 		},
+	},
+	// Command Code's documented Provider API (commandcode.ai/docs/provider):
+	// standard OpenAI Chat/Responses and Anthropic Messages lanes on one bearer,
+	// no CLI identity spoofing. It is a separate entry from `commandcode`
+	// because both product surfaces exist on the same host and key, but only
+	// this one follows the published schemas. The executor picks the lane from
+	// the model's supported_endpoints (commandcode_goat_catalog.go); BaseURL is
+	// the shared /provider/v1 prefix.
+	"commandcode-goat": {
+		BaseURL:       "https://api.commandcode.ai/provider/v1/chat/completions",
+		AuthHeader:    "Authorization",
+		AuthScheme:    "bearer",
+		SystemoneURL:  "https://api.commandcode.ai/provider/v1/systemone",
+		SystemonePath: "/systemone",
 	},
 	"ollama-local": {
 		BaseURL:       "http://localhost:11434/v1/chat/completions",
@@ -969,7 +994,7 @@ var KnownProviders = map[string]ProviderConfig{
 		AuthScheme: "raw",
 		StaticHeaders: map[string]string{
 			"anthropic-version":                         "2023-06-01",
-			"Anthropic-Beta":                            "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28",
+			"Anthropic-Beta":                            "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28,extended-cache-ttl-2025-04-11,thinking-display-updates-2026-08-18",
 			"Anthropic-Dangerous-Direct-Browser-Access": "true",
 			"User-Agent":                                "claude-cli/2.1.280 (external, sdk-cli)",
 			"X-App":                                     "cli",

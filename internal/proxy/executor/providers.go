@@ -77,6 +77,13 @@ func ForwardCodex(w http.ResponseWriter, req *Request) error {
 	if err != nil {
 		return fmt.Errorf("transform body: %w", err)
 	}
+	responsesLite := false
+	if req.Provider != "perplexity-agent" {
+		transformedBody, responsesLite, err = shapeCodexResponsesBody(transformedBody, codexLiteRequested(req.Ctx))
+		if err != nil {
+			return fmt.Errorf("shape Codex body: %w", err)
+		}
+	}
 
 	// Resolve conversation-stable session_id for Codex prompt caching
 	sessionID := req.SessionID
@@ -95,8 +102,6 @@ func ForwardCodex(w http.ResponseWriter, req *Request) error {
 
 	// Inject prompt_cache_key for stable Codex prompt caching if not already set
 	transformedBody = injectCodexPromptCacheKey(transformedBody, sessionID)
-
-	responsesLite := codexResponsesLiteBody(transformedBody)
 
 	// The ChatGPT Codex backend rejects unsupported parameters and requires the allowlist
 	transformedBody = stripCodexUnsupportedTokenParams(transformedBody, responsesLite)
@@ -1065,6 +1070,7 @@ func ensureMessagesFor(body []byte, provider, model string) []byte {
 	// (upstream thinkingUnified captureThinking)
 	applyClaudeThinkingDisplay(reqMap)
 	applyClaudeThinkingType(reqMap, provider, model)
+	SanitizeClaudeThinking(reqMap)
 	enforceClaudeThinkingSampling(reqMap)
 	delete(reqMap, "stream_options")
 	delete(reqMap, "store")
