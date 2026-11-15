@@ -220,6 +220,9 @@ func SetupRoutes(r interface {
 	// spend funds the inference (see free_pi_ads.go).
 	r.Get("/api/free-pi/ad", dashH.HandleGetFreePiAd)
 	r.Post("/api/free-pi/ad/impression", dashH.HandleFreePiImpression)
+	// Freebuff ad surface.
+	r.Get("/api/freebuff/ad", dashH.HandleGetFreebuffAd)
+	r.Post("/api/freebuff/ad/impression", dashH.HandleFreebuffImpression)
 
 	// Free-pi ad surface. The creative is served to the dashboard, and the
 	// impression is reported only from the client's render event — an
@@ -311,6 +314,9 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	// spend funds the inference (see free_pi_ads.go).
 	r.Get("/api/free-pi/ad", dashH.HandleGetFreePiAd)
 	r.Post("/api/free-pi/ad/impression", dashH.HandleFreePiImpression)
+	// Freebuff ad surface.
+	r.Get("/api/freebuff/ad", dashH.HandleGetFreebuffAd)
+	r.Post("/api/freebuff/ad/impression", dashH.HandleFreebuffImpression)
 
 	// Free-pi ad surface. The creative is served to the dashboard, and the
 	// impression is reported only from the client's render event — an
