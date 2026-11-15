@@ -99,6 +99,7 @@
   import ExportKeysModal from './ExportKeysModal.svelte'
   import ShareProviderModal from './ShareProviderModal.svelte'
   import FreebuffSessionBanner from './FreebuffSessionBanner.svelte'
+  import FreebuffAdBanner from './FreebuffAdBanner.svelte'
   import ProviderIcon from './ProviderIcon.svelte'
 
   interface Props {
@@ -3034,7 +3035,7 @@
   let canListLiveModels = $derived(
     providerId.startsWith('openai-compatible-') ||
       isCompatibleNode ||
-      ['antigravity', 'gemini-cli', 'cline', 'clinepass', 'qoder', 'qoder-cn', 'zed'].includes(providerId) ||
+      ['antigravity', 'gemini-cli', 'cline', 'clinepass', 'qoder', 'qoder-cn', 'zed', 'claude', 'anthropic'].includes(providerId) ||
       ModelsListURLs.has(providerId)
   )
 
@@ -4775,6 +4776,9 @@
     {/if}
     {#if isFreebuff}
       <div class="mb-4">
+        {#if targetFreebuffConn}
+          <FreebuffAdBanner connectionId={targetFreebuffConn.id} />
+        {/if}
         <FreebuffSessionBanner
           session={freebuffSession}
           isLoading={isLoadingSession}
@@ -5071,7 +5075,7 @@
           <div class="flex flex-col gap-1.5">
             {#each latestModels as m (m.id)}
               <div class="flex items-center gap-2">
-                <code class="flex-1 truncate text-xs font-mono bg-sidebar px-1.5 py-1 rounded">{m.id}</code>
+                <code class="flex-1 min-w-0 break-all sm:truncate text-xs font-mono bg-sidebar px-1.5 py-1 rounded">{m.id}</code>
                 <button
                   type="button"
                   onclick={() => handleAddLatestModel(m.id, m.name)}
@@ -5583,7 +5587,7 @@
                   <span class="text-[10px] text-text-muted">(inactive)</span>
                 {/if}
               </div>
-              <div class="text-[11px] text-text-muted truncate">{pool.proxyUrl}</div>
+              <div class="text-[11px] text-text-muted break-all sm:truncate">{pool.proxyUrl}</div>
             </div>
           </button>
         {:else}
