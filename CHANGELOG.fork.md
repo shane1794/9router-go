@@ -7,6 +7,12 @@ merges into upstream `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Fix: Codex web-search translation scoped to Codex requests (2026-11-16)
+
+- Removed the 4 fork-added lines in `internal/proxy/executor/transform.go` that called `translateCodexClaudeWebSearch` / `translateCodexClaudeWebSearchChoice` unconditionally inside `buildResponsesBody`. Every Responses request passing through it — Muse, opencode-zen, GitHub, Kimi, commandcode-goat, not just Codex — had any function tool named `web_search_20250305` silently rewritten into a hosted `web_search` tool. Upstream applies the translation only inside `shapeCodexResponsesBody` on the Codex forward path; `transform.go` now matches upstream exactly.
+- Root cause: the 2026-11-13 merge dropped the fork's `applyCodexModelShape` call but left the two helper calls inline. Caught by upstream test `TestResponsesBuilderDoesNotApplyCodexShape`, failing on the fork since that merge (passing on pure upstream 21d1fc5a).
+- Verified: `TestResponsesBuilderDoesNotApplyCodexShape` passes; `TestBuildResponsesBody_CodexClaudeWebSearchEndToEnd` still passes (real Codex requests still get the translation via `shapeCodexResponsesBody`); `gofmt` clean; `make build` passes (binary embeds 1.9.17-exp.4). No provider connections were checked or tested live.
+
 ### Upstream sync to 4b78e63e (2026-11-16)
 
 - Synced upstream luqman-v1/9router-go through `4b78e63e` (VERSION 1.9.17-exp.4; 39 commits after 21d1fc5a: upstream parity v0.5.116..v0.5.119 #1168, combo custom system prompt #1110, Freebuff #1160, deepseek-web parity #1165, SSRF allow private/LAN upstreams by default #1171, mobile dashboard layout fixes, version bumps to 1.9.17-exp.2/exp.3/exp.4). Trial merge had 2 conflicts, both resolved. Fork behaviour preserved: CodeBuddy fresh request/conversation ids, fork-only `make build` (only `9router-go`), model context tags, Nous catalogue (10 models), Jev tilde alias, SenseNova `.ai` pointing, clef systemone routing, Exa probe/fetch/search translation, media-page Add Connection `apiKey` fix, Cohere Compatibility API endpoint.

@@ -271,8 +271,6 @@ func buildResponsesBody(body []byte) ([]byte, string, error) {
 				}
 			}
 
-			translateCodexClaudeWebSearch(m)
-			translateCodexClaudeWebSearchChoice(m)
 			out, err := marshalStable(m)
 			return out, cleanModel, err
 		}
@@ -583,8 +581,6 @@ func buildResponsesBody(body []byte) ([]byte, string, error) {
 		}
 	}
 
-	translateCodexClaudeWebSearch(respReq)
-	translateCodexClaudeWebSearchChoice(respReq)
 	if oreq.ParallelToolCalls != nil {
 		respReq["parallel_tool_calls"] = *oreq.ParallelToolCalls
 	}
